@@ -5,7 +5,9 @@ import pandas as pd
 import streamlit as st
 
 from edgelab.analysis import IndicatorParams, add_indicators
-from edgelab.config import Settings, db_path, load_settings, save_settings
+from edgelab.account import BalanceSummary, summarise
+from edgelab.config import Settings, api_key, db_path, load_settings, save_settings
+from edgelab.data.providers.oanda import AccountSummary, OandaClient
 from edgelab.data.resample import resample_ohlcv
 from edgelab.data.sample import ensure_sample_data
 from edgelab.data.sessions import SessionConfig
@@ -97,3 +99,51 @@ def severity_box(issue) -> None:
     if issue.examples:
         body += "\n\n*Examples:* " + "; ".join(issue.examples)
     {"error": st.error, "warning": st.warning, "info": st.info}[issue.severity](body)
+
+
+# --------------------------------------------------------------------------- balance and OANDA
+def balance_summary() -> BalanceSummary:
+    s = get_settings()
+    st_ = get_store()
+    _maybe_auto_sync()
+    events = st_.load_balance_events()
+    if events.empty:  # first use: anchor the starting balance now, so older imported trades aren't double-counted
+        st_.add_balance_event(pd.Timestamp.now(tz="UTC"), "set", s.account_balance, s.account_currency,
+                              "Starting balance (default from settings - edit it under Settings -> Account)")
+        events = st_.load_balance_events()
+    return summarise(events, st_.load_trades(), s.account_currency, s.account_balance)
+
+
+def risk_amount() -> float:
+    return balance_summary().balance * get_settings().risk_pct / 100
+
+
+def oanda_client() -> OandaClient:
+    return OandaClient(api_key("OANDA_API_KEY") or "", get_settings().oanda_environment)
+
+
+def sync_oanda_balance() -> AccountSummary:
+    """Read balance/margin from OANDA (GET only) and record it as the new balance figure."""
+    s = get_settings()
+    summ = oanda_client().account_summary(s.oanda_account_id or None)
+    get_store().add_balance_event(summ.fetched_at, "sync", summ.balance, summ.currency,
+                                  f"OANDA {s.oanda_environment} account {summ.account_id}")
+    s.oanda_last_summary = {"account_id": summ.account_id, "currency": summ.currency, "balance": summ.balance,
+                            "nav": summ.nav, "unrealized_pl": summ.unrealized_pl, "margin_used": summ.margin_used,
+                            "margin_available": summ.margin_available, "open_trades": summ.open_trades,
+                            "fetched_at": summ.fetched_at.isoformat()}
+    if not s.oanda_account_id:
+        s.oanda_account_id = summ.account_id
+    save_settings(s)
+    return summ
+
+
+def _maybe_auto_sync() -> None:
+    s = get_settings()
+    if not s.oanda_auto_sync or st.session_state.get("_oanda_synced") or not api_key("OANDA_API_KEY"):
+        return
+    st.session_state["_oanda_synced"] = True
+    try:
+        sync_oanda_balance()
+    except Exception as e:  # noqa: BLE001
+        st.session_state["_oanda_sync_error"] = str(e)

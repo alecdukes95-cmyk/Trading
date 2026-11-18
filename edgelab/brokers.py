@@ -71,7 +71,7 @@ BUILTIN_BROKERS: dict[str, BrokerProfile] = {p.name: p for p in [
                   default_spread_pips=0.6, notes=PLACEHOLDER_NOTE,
                   data_access="Export bars from MetaTrader/cTrader, or the MetaTrader 5 Python link (Windows)."),
     BrokerProfile("OANDA", "OANDA web/app, MT4, TradingView", "UTC", notes=PLACEHOLDER_NOTE,
-                  data_access="v20 REST API with a free practice (demo) account key - planned downloader."),
+                  data_access="Built in: Data -> Download forex (OANDA), plus balance/margin sync (read-only, needs an API token in .env)."),
     BrokerProfile("IG", "IG web platform, MT4, ProRealTime, TradingView", "Europe/London", notes=PLACEHOLDER_NOTE,
                   data_access="IG REST API with a demo account (weekly historical-data allowance), or MT4 export."),
     BrokerProfile("Pepperstone", "MT4, MT5, cTrader, TradingView", "Europe/Athens", notes=PLACEHOLDER_NOTE,

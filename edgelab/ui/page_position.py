@@ -6,7 +6,7 @@ from edgelab.learning.glossary import help_text
 from edgelab.risk import analyse_position, units_for_risk, value_per_price_unit
 from edgelab.ui.page_glossary import term_expanders
 from edgelab.ui.page_settings import money
-from edgelab.ui.state import get_converter, get_settings
+from edgelab.ui.state import balance_summary, get_converter, get_settings
 
 
 def render():
@@ -14,8 +14,10 @@ def render():
     b = s.broker()
     ccy = s.account_currency
     conv = get_converter()
+    balance = balance_summary().balance
+    risk_amt = balance * s.risk_pct / 100
     st.title("Position & margin calculator")
-    st.caption(f"Account {money(s.account_balance, ccy)} | risk rule {s.risk_pct:.2f}% = {money(s.risk_amount, ccy)} "
+    st.caption(f"Current balance {money(balance, ccy)} | risk rule {s.risk_pct:.2f}% = {money(risk_amt, ccy)} "
                f"| broker: **{b.name}** (change in Settings). Calculations only - nothing is sent anywhere.")
 
     c1, c2, c3 = st.columns(3)
@@ -47,9 +49,9 @@ def render():
         default_units = int(s.forex_fixed_units)
         how = f"fixed size from Settings ({default_units:,} units = {default_units / 100_000:.2f} lots)"
     else:
-        default_units = max(units_for_risk(s.risk_amount, stop_d, vpu, step=b.min_units if inst.is_forex else 1), 0)
+        default_units = max(units_for_risk(risk_amt, stop_d, vpu, step=b.min_units if inst.is_forex else 1), 0)
         if not inst.is_forex:
-            default_units = round(s.risk_amount / (stop_d * vpu), 4) if stop_d > 0 else 0.0
+            default_units = round(risk_amt / (stop_d * vpu), 4) if stop_d > 0 else 0.0
         how = "risk-based size from your stop"
     units = c3.number_input("Position size (units)" if inst.is_forex else "Position size (coins)", min_value=0.0,
                             value=float(default_units), step=1_000.0 if inst.is_forex else 0.001,
@@ -59,9 +61,24 @@ def render():
         st.warning("Position size is zero - widen the target or check the stop.")
         return
 
+    other_margin, unreal = 0.0, 0.0
+    last = s.oanda_last_summary or {}
+    fresh = last and last.get("currency") == ccy and \
+        pd.Timestamp.now(tz="UTC") - pd.Timestamp(last["fetched_at"]) < pd.Timedelta(hours=12)
+    with st.expander("Positions you already have open (affects free margin)", expanded=bool(fresh and last.get("margin_used"))):
+        c1, c2 = st.columns(2)
+        other_margin = c1.number_input(f"Margin already in use ({ccy})", min_value=0.0,
+                                       value=float(last.get("margin_used", 0.0)) if fresh else 0.0, step=50.0)
+        unreal = c2.number_input(f"Unrealised P&L on open positions ({ccy})",
+                                 value=float(last.get("unrealized_pl", 0.0)) if fresh else 0.0, step=10.0)
+        if fresh:
+            st.caption(f"Pre-filled from your OANDA sync at "
+                       f"{pd.Timestamp(last['fetched_at']).tz_convert('Europe/London'):%H:%M} UK time.")
+
     try:
-        r = analyse_position(inst, units, price, balance=s.account_balance, risk_pct=s.risk_pct, broker=b, conv=conv,
-                             ccy=ccy, stop_distance=stop_d, target_distance=tgt_d)
+        r = analyse_position(inst, units, price, balance=balance, risk_pct=s.risk_pct, broker=b, conv=conv,
+                             ccy=ccy, stop_distance=stop_d, target_distance=tgt_d, other_margin_used=other_margin,
+                             unrealised_pnl=unreal)
     except ValueError as e:
         st.error(str(e))
         return
@@ -91,7 +108,7 @@ def render():
     m[2].metric(f"Widest stop for your rule", f"{max(mx, 0):,.1f} {unit_word.split(' ')[0]}" if mx is not None else "-",
                 help="At this size, the widest stop that keeps the loss (including costs) within your risk limit.")
     m[3].metric("Size that risks exactly the limit", f"{r.units_for_limit:,} units" if inst.is_forex and r.units_for_limit
-                else (f"{s.risk_amount / (stop_d * vpu + r.costs.total / units):.4f}" if stop_d else "-"))
+                else (f"{risk_amt / (stop_d * vpu + r.costs.total / units):.4f}" if stop_d else "-"))
 
     st.subheader("Leverage and margin")
     m = st.columns(4)
@@ -105,7 +122,7 @@ def render():
     st.markdown(
         f"- With **{units:,.0f} units** you control **{money(r.notional, ccy)}** of {inst.base} using "
         f"**{money(r.margin_required, ccy)}** of margin: leverage of {r.notional / r.margin_required:.0f}:1 on the "
-        f"position, and {r.notional / s.account_balance:.2f}x your whole balance.\n"
+        f"position, and {r.notional / balance:.2f}x your whole balance.\n"
         f"- The broker starts closing positions when equity falls to {b.margin_closeout_pct:.0f}% of the margin in "
         f"use: here after a loss of **{money(r.closeout_loss, ccy)}**"
         + (f", i.e. a move of about **{dist:,.0f} {unit_word.split(' ')[0]}** against you." if dist else ".")

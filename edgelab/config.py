@@ -49,10 +49,14 @@ class Settings:
     forex_sizing: str = "fixed"            # "fixed" units per trade, or "risk" (size from stop distance)
     forex_fixed_units: int = 10_000        # 1 mini lot
     crypto_sizing: str = "risk"
-    active_broker: str = "Generic UK broker (spread only)"
+    active_broker: str = "OANDA"
     brokers: dict = field(default_factory=dict)          # your edited/added broker profiles
     reference_rates: dict = field(default_factory=lambda: dict(DEFAULT_REFERENCE_RATES))
     opening_range_minutes: int = 30
+    oanda_environment: str = "practice"       # "practice" (demo) or "live"; the token itself lives in .env
+    oanda_account_id: str = ""                # optional; first account on the token if blank
+    oanda_auto_sync: bool = False             # refresh balance from OANDA when the app starts
+    oanda_last_summary: dict = field(default_factory=dict)
     sessions: dict = field(default_factory=lambda: {k: v.to_dict() for k, v in DEFAULT_SESSIONS.items()})
 
     def session_for(self, asset_class: str) -> SessionConfig:

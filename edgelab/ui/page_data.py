@@ -24,7 +24,10 @@ DATE_ORDER = {"Auto-detect": None, "Day first (31/01/2026)": True, "Month first 
 def render():
     st.title("Data")
     st.caption("Bring in price data and trade logs. Everything is stored locally on this computer.")
-    t1, t2, t3, t4 = st.tabs(["📄 Import price CSV", "⬇️ Download crypto", "📒 Import trade log", "🗂️ My datasets"])
+    t0, t1, t2, t3, t4 = st.tabs(["🏦 Download forex (OANDA)", "📄 Import price CSV", "⬇️ Download crypto",
+                                  "📒 Import trade log", "🗂️ My datasets"])
+    with t0:
+        _oanda_download()
     with t1:
         _csv_wizard()
     with t2:
@@ -111,6 +114,96 @@ def _csv_wizard():
         st.session_state.pop("csv_build", None)
         st.session_state["chart_id"] = ds_id
         st.success(f"Saved as dataset #{ds_id}. Open **Chart** to view it.")
+
+
+# --------------------------------------------------------------------------- OANDA download
+def _oanda_download():
+    from dataclasses import replace
+
+    from edgelab.config import api_key
+    from edgelab.data.providers import oanda
+    from edgelab.data.sessions import in_window
+    from edgelab.ui.state import oanda_client, update_settings
+
+    s = get_settings()
+    st.markdown(
+        "Download forex candles straight from **your OANDA account** (practice or live). These are the same prices "
+        "your OANDA charts show, so the analysis matches what you trade. Read-only: EdgeLab only sends GET requests "
+        "and cannot place, change or cancel orders.")
+    if not api_key("OANDA_API_KEY"):
+        st.info(
+            "**One-time setup:**\n"
+            "1. Log in to OANDA and open *My Account -> Manage API Access* (practice accounts have this too). "
+            "Generate a personal access token.\n"
+            "2. In the EdgeLab folder, copy `.env.example` to a new file called `.env` (if you haven't already).\n"
+            "3. Put your token after `OANDA_API_KEY=` and save. Set `Account type` under Settings -> Account -> "
+            "Sync from OANDA to *practice* or *live* to match the token.\n"
+            "4. Close and re-open EdgeLab (run.bat).\n\n"
+            "Treat the token like a password: it never leaves your computer except to talk to OANDA.")
+        return
+    c1, c2, c3 = st.columns(3)
+    sym = c1.selectbox("Pair", list(oanda.INSTRUMENTS), key="oanda_sym")
+    tf = c2.selectbox("Timeframe", ["5m", "15m", "1h", "1d"], key="oanda_tf")
+    default_days = {"5m": 365, "15m": 730, "1h": 1095, "1d": 3650}[tf]
+    days = c3.number_input("Days of history", 1, 7300, default_days, key=f"oanda_days_{tf}")
+    measure = st.checkbox("Also measure the real spread (bid/ask) - recommended", value=True,
+                          help="Downloads bid and ask prices too, so EdgeLab can tell you the typical spread "
+                               "during your trading window and use it for cost calculations.")
+    n = days * 1440 / {"5m": 5, "15m": 15, "1h": 60, "1d": 1440}[tf] * 5 / 7
+    st.caption(f"About {n:,.0f} candles in {max(1, n / oanda.MAX_COUNT):,.0f} requests. Environment: "
+               f"**{s.oanda_environment}**.")
+    if st.button("Download from OANDA", type="primary"):
+        end = pd.Timestamp.now(tz="UTC").floor("min")
+        bar = st.progress(0.0, text="Connecting to OANDA...")
+        try:
+            df = oanda_client().candles(sym, tf, end - pd.Timedelta(days=int(days)), end,
+                                        price="MBA" if measure else "M",
+                                        progress=lambda f, m: bar.progress(min(1.0, f), text=m))
+        except Exception as e:  # noqa: BLE001
+            bar.empty()
+            st.error(f"Download failed: {e}")
+            return
+        bar.empty()
+        if df.empty:
+            st.error("OANDA returned no candles for that period.")
+            return
+        inst = get_instrument(sym)
+        cfg = s.session_for("forex")
+        stats = oanda.spread_stats(df, inst.pip, in_window(df.index, cfg)) if measure else None
+        prices = df[["open", "high", "low", "close", "volume"]]
+        report = validate_ohlcv(prices, "forex", cfg)
+        st.markdown(f"**{report.headline()}**")
+        for issue in report.issues:
+            severity_box(issue)
+        cleaned, _ = clean_ohlcv(prices)
+        note = ""
+        if stats:
+            note = (f"Spread median {stats['median_all']:.2f} pips overall"
+                    + (f", {stats['median_window']:.2f} pips in your window" if "median_window" in stats else ""))
+        ds_id = get_store().save_dataset(cleaned, name=f"{sym} {tf} (OANDA {s.oanda_environment})", symbol=sym,
+                                         asset_class="forex", timeframe=tf, source=f"oanda:{s.oanda_environment}",
+                                         notes=note)
+        st.cache_data.clear()
+        st.success(f"Saved {len(cleaned):,} candles as dataset #{ds_id}. Open **Chart** to view them.")
+        if stats:
+            st.session_state["oanda_spread"] = (sym, stats)
+    if "oanda_spread" in st.session_state:
+        sym_s, stats = st.session_state["oanda_spread"]
+        win = stats.get("median_window", stats["median_all"])
+        st.markdown(f"**Measured spread on {sym_s}:** median **{win:.2f} pips** during your trading window "
+                    f"(90% of the time below {stats.get('p90_window', stats['p90_all']):.2f}); "
+                    f"{stats['median_all']:.2f} pips across all hours. Spreads are widest around the 22:00 UK "
+                    "rollover and in quiet hours.")
+        b = s.broker()
+        if st.button(f"Use {win:.2f} pips for {sym_s} in my '{b.name}' broker profile"):
+            spreads = dict(b.spreads_pips)
+            spreads[sym_s] = round(win, 2)
+            prof = replace(b, spreads_pips=spreads,
+                           notes="Spreads measured from OANDA data where available; other costs are your inputs.")
+            s.brokers[b.name] = prof.to_dict()
+            update_settings(s)
+            st.session_state.pop("oanda_spread")
+            st.success("Spread saved to your broker profile.")
 
 
 # --------------------------------------------------------------------------- crypto download

@@ -46,6 +46,27 @@ The `sample_data` folder also contains:
 
 ## Your own data
 
+### Your balance
+
+- **Enter your balance once** under Settings → Account, using the figure your broker shows. From then on EdgeLab keeps it up to date by itself:
+  - it adds **deposits, withdrawals and adjustments** you record;
+  - it adds the P&L of every recorded trade that **closes after** that moment. Earlier trades are assumed to be in the figure already, so they're never counted twice.
+- **Re-anchor whenever you like:** enter a new figure, or press **Sync balance now** to read your balance, equity and margin straight from OANDA.
+- **Your 0.65% risk amount always follows the current balance.**
+
+### OANDA (your broker)
+
+1. In OANDA, go to *My Account → Manage API Access* and generate a personal access token. Practice (demo) accounts have this too.
+2. Copy `.env.example` to `.env` in the EdgeLab folder and put the token after `OANDA_API_KEY=`. Restart EdgeLab.
+3. Under Settings → Account → Sync from OANDA, pick **practice** or **live** to match the token.
+
+What you can then do:
+
+- **Data → Download forex (OANDA):** download up to years of 5m, 15m, 1h or daily candles. Tick *measure the real spread* to see the typical bid/ask spread in your trading window, then save it to your broker profile with one click.
+- **Sync balance now:** reads balance, equity (NAV), margin used and margin available. The Position & margin page uses your open margin automatically.
+
+The OANDA client is **read-only by design**. It can only send GET requests, and a test fails if code that could send orders is ever added. Your token still has trading rights at OANDA, so keep `.env` private.
+
 ### Money: GBP account, lots, leverage and margin
 
 - **Everything is in your account currency (GBP by default).**
@@ -86,7 +107,7 @@ Copy `.env.example` to `.env` and paste keys there. `.env` is ignored by git, so
 
 Double-click `run_tests.bat`, or from a terminal: `.venv\Scripts\python -m pytest`.
 
-There are 77 automated checks. They cover:
+There are 86 automated checks. They cover:
 
 - **Indicators:** hand-computed values, plus a test proving no indicator uses future bars.
 - **Sessions and DST:** trading-day boundaries and daylight-saving handling.
@@ -95,7 +116,8 @@ There are 77 automated checks. They cover:
 - **Storage:** saving and reloading datasets and trades.
 - **Money maths:** GBP currency conversions, pip values, margin at UK leverage, round-trip costs and position sizing, each hand-checked.
 - **Trade logs:** P&L and R calculations, converted to GBP.
-- **Downloader and narrative:** the Coinbase downloader (offline, with a fake server) and the "what happened today" text.
+- **Downloaders and narrative:** the OANDA client (candles, spreads, account summary and the read-only guarantee) and the Coinbase downloader, both offline against fake servers, plus the "what happened today" text.
+- **Running balance:** deposits, withdrawals, closed trades, OANDA sync, and no double counting.
 - **Every page of the app:** each one renders without errors.
 
 ## Project layout
@@ -104,7 +126,7 @@ There are 77 automated checks. They cover:
 app.py                 entry point (streamlit run app.py)
 edgelab/
   data/                CSV loading, timestamp parsing, validation, sessions, resampling, SQLite store,
-                       sample-data generator, trade-log import, providers/ (Coinbase)
+                       sample-data generator, trade-log import, providers/ (OANDA read-only, Coinbase)
   indicators/          SMA/EMA/RMA, ATR, RSI, MACD, VWAP, opening range, prior-day levels, pivots, S/R
   learning/            glossary, "what happened today" narratives
   ui/                  Streamlit pages and the Plotly chart builder
@@ -112,6 +134,7 @@ edgelab/
   fx.py                currency conversion (hints -> your data -> reference rates)
   risk.py              pip value, notional, margin, costs, position sizing
   brokers.py           broker profiles (costs, leverage, margin close-out)
+  account.py           running balance (balance figure + cash flows + closed-trade P&L)
 tests/                 pytest suite
 sample_data/           example CSVs (regenerate with scripts/make_sample_files.py)
 userdata/              YOUR data: edgelab.db (SQLite) and settings.json - created on first run, never committed

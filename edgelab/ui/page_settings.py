@@ -35,15 +35,16 @@ def render():
 
 # ----------------------------------------------------------------------------------- account
 def _account(s):
+    _balance(s)
+    st.divider()
     with st.form("account_form"):
-        c1, c2, c3 = st.columns(3)
+        st.markdown("**Currency and risk rule**")
+        c1, c2 = st.columns(2)
         ccy = c1.selectbox("Account currency", ["GBP", "USD", "EUR"], index=["GBP", "USD", "EUR"].index(s.account_currency)
                            if s.account_currency in ("GBP", "USD", "EUR") else 0,
                            help="All P&L, margin and costs are shown in this currency.")
-        bal = c2.number_input(f"Account balance ({ccy})", min_value=50.0, value=float(s.account_balance), step=250.0)
-        risk = c3.number_input("Risk per trade (% of balance)", 0.05, 5.0, float(s.risk_pct), 0.05,
+        risk = c2.number_input("Risk per trade (% of current balance)", 0.05, 5.0, float(s.risk_pct), 0.05,
                                help=help_text("Position sizing"))
-        st.markdown(f"Your risk rule: lose at most **{money(bal * risk / 100, ccy)}** per trade.")
         st.markdown("**Forex position size**")
         c1, c2 = st.columns(2)
         mode = c1.radio("Sizing method", ["fixed", "risk"], index=0 if s.forex_sizing == "fixed" else 1, horizontal=True,
@@ -56,10 +57,116 @@ def _account(s):
         cmode = st.radio("Crypto sizing", ["risk", "fixed"], index=0 if s.crypto_sizing == "risk" else 1, horizontal=True,
                          format_func=lambda m: {"fixed": "Fixed", "risk": "Size from my stop (recommended)"}[m])
         if st.form_submit_button("Save", type="primary"):
-            s.account_currency, s.account_balance, s.risk_pct = ccy, float(bal), float(risk)
+            s.account_currency, s.risk_pct = ccy, float(risk)
             s.forex_sizing, s.forex_fixed_units, s.crypto_sizing = mode, int(units), cmode
             update_settings(s)
             st.success("Saved.")
+
+
+def _balance(s):
+    from edgelab.account import balance_history
+    from edgelab.config import api_key
+    from edgelab.ui.state import balance_summary, get_store, sync_oanda_balance
+
+    store = get_store()
+    ccy = s.account_currency
+    summ = balance_summary()
+    st.subheader("Account balance")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Current balance", money(summ.balance, ccy))
+    c2.metric(f"Risk per trade ({s.risk_pct:.2f}%)", money(summ.balance * s.risk_pct / 100, ccy))
+    c3.metric("Closed trades counted", summ.n_trades)
+    st.caption(summ.describe() + ". Your balance updates automatically as trades are recorded; enter a new "
+               "figure, or sync from OANDA, whenever you want to re-anchor it.")
+    if summ.n_skipped:
+        st.warning(f"{summ.n_skipped} recorded trades closed after your balance figure have no {ccy} P&L, so they "
+                   "were not counted. Re-import them with the account currency set correctly.")
+    if err := st.session_state.pop("_oanda_sync_error", None):
+        st.warning(f"Automatic OANDA sync failed: {err}")
+
+    t_set, t_flow, t_oanda, t_hist = st.tabs(["Enter balance", "Deposit / withdrawal", "Sync from OANDA", "History"])
+    with t_set:
+        with st.form("set_balance"):
+            c1, c2, c3 = st.columns(3)
+            amt = c1.number_input(f"Balance ({ccy})", min_value=0.0, value=float(round(summ.balance, 2)), step=100.0)
+            d = c2.date_input("As of date", value=pd.Timestamp.now(tz="Europe/London").date())
+            t = c3.time_input("Time (UK)", value=pd.Timestamp.now(tz="Europe/London").floor("min").time())
+            note = st.text_input("Note (optional)", "")
+            st.caption("Use the balance shown by your broker at that moment. Trades that close after this time are "
+                       "added to it automatically; earlier trades are assumed to be included already.")
+            if st.form_submit_button("Set balance", type="primary"):
+                ts = _event_time(d, t)
+                store.add_balance_event(ts, "set", amt, ccy, note)
+                s.account_balance = float(amt)
+                update_settings(s)
+                st.success("Balance updated.")
+                st.rerun()
+    with t_flow:
+        with st.form("flow"):
+            c1, c2, c3 = st.columns(3)
+            kind = c1.selectbox("Type", ["deposit", "withdrawal", "adjustment"],
+                                format_func=lambda k: {"deposit": "Deposit (+)", "withdrawal": "Withdrawal (-)",
+                                                       "adjustment": "Adjustment (+/-, e.g. fees, interest)"}[k])
+            amt = c2.number_input(f"Amount ({ccy})", value=0.0, step=50.0)
+            d = c3.date_input("Date", value=pd.Timestamp.now(tz="Europe/London").date(), key="flow_date")
+            note = st.text_input("Note", "", key="flow_note")
+            if st.form_submit_button("Add") and amt:
+                ts = _event_time(d, None)
+                if summ.baseline_time is not None and ts <= summ.baseline_time:
+                    st.warning("That date is before your current balance figure, so it is treated as already "
+                               "included and won't change the balance. Enter a new balance figure instead.")
+                store.add_balance_event(ts, kind, amt, ccy, note)
+                st.rerun()
+    with t_oanda:
+        has_key = bool(api_key("OANDA_API_KEY"))
+        st.markdown("Reads your **balance, equity (NAV) and margin in use** from OANDA. Read-only: EdgeLab only "
+                    "sends GET requests and has no ability to place or change orders.")
+        if not has_key:
+            st.info("No OANDA token found. To enable this: in OANDA go to *My Account -> Manage API Access* and "
+                    "generate a token, then open the file `.env` in the EdgeLab folder (copy `.env.example` if "
+                    "it doesn't exist) and add a line `OANDA_API_KEY=your-token`. Restart EdgeLab.")
+        with st.form("oanda_form"):
+            c1, c2, c3 = st.columns(3)
+            env = c1.selectbox("Account type", ["practice", "live"], index=0 if s.oanda_environment == "practice" else 1,
+                               format_func=lambda e: {"practice": "Practice (demo)", "live": "Live"}[e])
+            acct = c2.text_input("Account ID (optional)", s.oanda_account_id,
+                                 help="Looks like 101-004-1234567-001. Leave blank to use the first account.")
+            auto = c3.checkbox("Sync automatically when EdgeLab starts", value=bool(s.oanda_auto_sync))
+            save = st.form_submit_button("Save OANDA settings")
+            go = st.form_submit_button("Sync balance now", type="primary", disabled=not has_key)
+        if save or go:
+            s.oanda_environment, s.oanda_account_id, s.oanda_auto_sync = env, acct.strip(), bool(auto)
+            update_settings(s)
+        if go:
+            try:
+                res = sync_oanda_balance()
+                if res.currency != ccy:
+                    st.warning(f"Your OANDA account is in {res.currency} but EdgeLab is set to {ccy}. Change the "
+                               "account currency below so the numbers match.")
+                st.success(f"Synced: balance {res.balance:,.2f} {res.currency}, NAV {res.nav:,.2f}, margin used "
+                           f"{res.margin_used:,.2f}, available {res.margin_available:,.2f}, {res.open_trades} open trades.")
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Could not sync from OANDA: {e}")
+        last = s.oanda_last_summary
+        if last:
+            st.caption(f"Last sync {pd.Timestamp(last['fetched_at']).tz_convert('Europe/London'):%d %b %Y %H:%M} UK: "
+                       f"balance {last['balance']:,.2f}, NAV {last['nav']:,.2f}, margin used {last['margin_used']:,.2f} "
+                       f"{last['currency']}.")
+    with t_hist:
+        ev = store.load_balance_events()
+        hist = balance_history(ev, store.load_trades(), ccy, s.account_balance)
+        if len(hist) > 1:
+            st.line_chart(hist.rename("Balance"), height=220)
+        if ev.empty:
+            st.caption(f"No balance entries yet - using {money(s.account_balance, ccy)} from settings.")
+        else:
+            view = ev.assign(when=ev["time"].dt.tz_convert("Europe/London").dt.strftime("%Y-%m-%d %H:%M"))
+            st.dataframe(view[["id", "when", "kind", "amount", "currency", "note"]], hide_index=True)
+            c1, c2 = st.columns([3, 1])
+            victim = c1.selectbox("Delete an entry", ev["id"].tolist(), key="del_bal")
+            if c2.button("Delete entry"):
+                store.delete_balance_event(int(victim))
+                st.rerun()
 
 
 # ----------------------------------------------------------------------------------- broker
@@ -214,6 +321,17 @@ def _sessions(s):
             s.sessions = {k: SessionConfig.to_dict(v) for k, v in src.items()}
             update_settings(s)
             st.success("Saved.")
+
+
+def _event_time(d, t) -> pd.Timestamp:
+    """UTC time for a balance entry. Today's date with the default time means 'right now' (to the second)."""
+    now = pd.Timestamp.now(tz="UTC")
+    local_now = now.tz_convert("Europe/London")
+    if d == local_now.date() and (t is None or (t.hour, t.minute) == (local_now.hour, local_now.minute)):
+        return now
+    t = t or pd.Timestamp("12:00").time()
+    ts = pd.Timestamp.combine(d, t).tz_localize("Europe/London", ambiguous=True, nonexistent="shift_forward")
+    return ts.tz_convert("UTC")
 
 
 def _valid(hhmm: str) -> bool:

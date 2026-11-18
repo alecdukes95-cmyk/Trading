@@ -32,6 +32,15 @@ CREATE TABLE IF NOT EXISTS bars (
     open REAL, high REAL, low REAL, close REAL, volume REAL,
     PRIMARY KEY (dataset_id, ts)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS balance_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    kind TEXT NOT NULL,          -- set (balance figure), sync (from broker), deposit, withdrawal, adjustment
+    amount REAL NOT NULL,
+    currency TEXT,
+    note TEXT,
+    created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -169,6 +178,24 @@ class Store:
             df["entry_time"] = from_epoch_seconds(df["entry_ts"])
             df["exit_time"] = from_epoch_seconds(df["exit_ts"])
         return df
+
+    # --------------------------------------------------------- balance events
+    def add_balance_event(self, ts: pd.Timestamp, kind: str, amount: float, currency: str, note: str = "") -> int:
+        with self._conn() as c:
+            cur = c.execute("INSERT INTO balance_events (ts, kind, amount, currency, note, created_at) "
+                            "VALUES (?,?,?,?,?,?)",
+                            (int(to_epoch_seconds([ts])[0]), kind, float(amount), currency, note, _now()))
+            return int(cur.lastrowid)
+
+    def load_balance_events(self) -> pd.DataFrame:
+        with self._conn() as c:
+            df = pd.read_sql_query("SELECT * FROM balance_events ORDER BY ts, id", c)
+        df["time"] = from_epoch_seconds(df["ts"]) if not df.empty else pd.Series(dtype="datetime64[ns, UTC]")
+        return df
+
+    def delete_balance_event(self, event_id: int) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM balance_events WHERE id = ?", (event_id,))
 
     def delete_trades(self, source: str | None = None) -> None:
         with self._conn() as c:
