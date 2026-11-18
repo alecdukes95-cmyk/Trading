@@ -103,9 +103,32 @@ class OandaClient:
                               f("marginUsed"), f("marginAvailable"), int(a.get("openTradeCount", 0) or 0),
                               float(mco) * 100 if mco not in (None, "") else None, pd.Timestamp.now(tz="UTC"))
 
+    def prices(self, symbols: list[str], account_id: str | None = None) -> dict:
+        """Current bid/ask for several pairs (GET /pricing - read-only). Returns symbol -> dict."""
+        account_id = account_id or getattr(self, "_acct", None)
+        if not account_id:
+            ids = self.accounts()
+            if not ids:
+                raise OandaError("No accounts found for this token.")
+            account_id = self._acct = ids[0]
+        data = self._get(f"/v3/accounts/{account_id}/pricing",
+                         {"instruments": ",".join(to_oanda(s) for s in symbols)})
+        back = {to_oanda(s): s for s in symbols}
+        out = {}
+        for p in data.get("prices", []):
+            sym = back.get(p.get("instrument"), p.get("instrument", "").replace("_", ""))
+            bids, asks = p.get("bids") or [], p.get("asks") or []
+            if not bids or not asks:
+                continue
+            t = pd.Timestamp(p.get("time")) if p.get("time") else pd.Timestamp.now(tz="UTC")
+            out[sym] = {"bid": float(bids[0]["price"]), "ask": float(asks[0]["price"]),
+                        "time": t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC"),
+                        "tradeable": bool(p.get("tradeable", True))}
+        return out
+
     # ------------------------------------------------------------------ prices
     def candles(self, symbol: str, timeframe: str, start: pd.Timestamp, end: pd.Timestamp, price: str = "MBA",
-                progress=None) -> pd.DataFrame:
+                progress=None, include_incomplete: bool = False) -> pd.DataFrame:
         """Completed candles between start and end. Returns mid OHLC + volume, plus bid/ask closes
         (bid_c, ask_c) when price includes B and A - used to measure the real spread."""
         if timeframe not in GRANULARITY:
@@ -125,7 +148,7 @@ class OandaClient:
             if not batch:
                 break
             for c in batch:
-                if not c.get("complete", True):
+                if not c.get("complete", True) and not include_incomplete:
                     continue
                 mid = c.get("mid") or _mid_from(c)
                 row = {"time": c["time"], "open": float(mid["o"]), "high": float(mid["h"]), "low": float(mid["l"]),

@@ -23,6 +23,34 @@ On the very first launch, EdgeLab creates its sample data, which takes 10–20 s
 
 **Mac or Linux:** run `./run.sh` in a terminal instead.
 
+## Paper trading (Stage 3)
+
+Practise the human side with fake money against **real, live prices**: planning, sizing, managing and reviewing trades. Orders are filled **inside EdgeLab**. Nothing is ever sent to a broker, not even to the OANDA practice account.
+
+- **Price feed.**
+  - **Live:** OANDA bid/ask quotes from your practice token, or MetaTrader 5.
+  - **Replay practice:** stored history played back at speed, for weekends and evenings. The chart never shows the future.
+- **Realistic fills.**
+  - Market orders fill at the ask (buy) or bid (sell), so you pay the real spread.
+  - Limit and stop orders trigger on the live quote. A stop that price jumps over fills at the worse price.
+  - Stop-loss and take-profit are checked on every quote.
+  - Commission comes from your broker profile.
+  - Margin is checked when you place an order. The 50% margin close-out applies.
+- **Order ticket.**
+  - Buy or sell; market, limit or stop.
+  - Size: 1 mini lot, 1 micro lot, risk-based (0.65%) or custom.
+  - Stop and target set in pips.
+  - A live preview of the loss at your stop (in £ and %), the margin, and reward:risk.
+- **The human side.** Before each trade you record a plan: setup, reason, confidence, how you feel, and a pre-trade checklist. You get warnings for:
+  - no stop, or breaking your risk rule;
+  - a low reward:risk;
+  - a risky emotional state;
+  - revenge trading (within 15 minutes of a loss), over-trading, or a size far above your usual.
+- **Managing positions.** Live P&L in pips, £ and R. Close, move the stop to breakeven, or change the stop or target. Moving a stop further away is flagged in your journal.
+- **Journal and review.** Every closed paper trade goes into your trade log (marked *paper*, never touching your real balance). Review it: did you follow the plan, a grade for the decision rather than the result, mistakes, and the lesson.
+- **Performance.** Paper balance curve and stats by setup and by emotion. Behaviour insights include stops widened, winners cut short, and planned against unplanned trades. You can run Monte Carlo on your paper trades.
+- **From alerts.** **🧾 Paper-trade this idea** on any alert card places the alert's stop-entry order on the paper account.
+
 ## Learn: replay trainer (Stage 3, in progress)
 
 1. **Start a replay.** Pick a pair and timeframe and press **New replay**. You're dropped at a moment in history with the future hidden. Choose *Random moment* (often the right answer is "no trade") or *Pattern drill* (a bar where one of the app's patterns just completed).
@@ -208,7 +236,7 @@ Copy `.env.example` to `.env` and paste keys there. `.env` is ignored by git, so
 
 Double-click `run_tests.bat`, or from a terminal: `.venv\Scripts\python -m pytest`.
 
-There are 136 automated checks. They cover:
+There are 147 automated checks. They cover:
 
 - **Indicators:** hand-computed values, plus a test proving no indicator uses future bars.
 - **Sessions and DST:** trading-day boundaries and daylight-saving handling.
@@ -225,6 +253,14 @@ There are 136 automated checks. They cover:
 - **Statistics:** the plain-English verdicts.
 - **Monte Carlo maths:** exact equity paths, drawdown, recovery and streaks, shuffle conserving the total, parameter uncertainty widening the range, Kelly against its formula, and edge-test verdicts including the multiple-testing correction.
 - **Replay scoring:** how the market's next move is labelled (up, down or going nowhere), wins and losses, wrong-side stops, discipline flags, and a full trainer round in the app.
+- **Paper trading:**
+  - fills at bid/ask, with stops that are jumped over filling worse;
+  - stop and limit triggers and expiry;
+  - margin rejection and close-out;
+  - GBP P&L, R and commission;
+  - stop-widening flags and the discipline checks;
+  - the replay feed never showing the future;
+  - a full replay round trip in the app.
 - **Scanner and alerts:** the live scanner (only new candles alert, no duplicates), the simulation, notifications, and the alert page.
 - **Every page of the app:** each one renders without errors.
 
@@ -239,6 +275,7 @@ edgelab/
   patterns/            detectors, trade plans, outcome replay, pattern statistics
   backtest/            pattern backtests across pairs (trade tables, in/out-of-sample split)
   montecarlo/          bootstrap / shuffle / parameter-perturbation engine, edge test, Kelly, sizing table
+  paper/               paper-trading engine (orders, fills, margin), feeds (live quotes / replay), discipline checks
   live/                background scanner (live OANDA / simulation), alerts, desktop notifications
   learning/            glossary, "what happened today" narratives
   ui/                  Streamlit pages and the Plotly chart builder

@@ -106,6 +106,7 @@ def _alert_card(a: dict, s, expanded: bool):
     with st.expander(f"{new}{tag} | {when:%a %d %b %H:%M} | {pl['symbol']} {pl['timeframe']} | {pl['title']} -> "
                      f"{p['order_type']} {p['entry']:.{d}f}, SL {p['stop']:.{d}f}, TP {p['target']:.{d}f}{risk}",
                      expanded=expanded):
+        _paper_button(a, pl, s)
         df, sig = payload_frame_and_signal(pl)
         render_signal(sig, df, inst, tz=s.display_tz, timeframe=pl["timeframe"], stats=pl.get("stats"),
                       stats_source=pl.get("stats_source", ""), is_synthetic="SYNTHETIC" in pl.get("stats_source", ""),
@@ -141,3 +142,25 @@ def _watchlist_grid(s):
             st.plotly_chart(fig, config={"displayModeBar": False, "staticPlot": True}, key=f"spark_{sym}")
             st.caption(("SYNTHETIC sample" if ds["is_sample"] else ds["source"]) +
                        f" - data to {ds['end']:%d %b %Y}")
+
+
+def _paper_button(a: dict, pl: dict, s) -> None:
+    """Send the alert's order idea to the paper account as a pending stop order."""
+    from edgelab.ui.state import get_paper
+
+    p = pl["plan"]
+    if not st.button("🧾 Paper-trade this idea", key=f"paper_{a['id']}",
+                     help="Places the same stop-entry order, stop-loss and take-profit on your PAPER account."):
+        return
+    svc = get_paper()
+    now = svc.feed.now() if svc.feed is not None else pd.Timestamp.now(tz="UTC")
+    units = int((pl.get("position") or {}).get("units") or s.forex_fixed_units)
+    plan = {"setup": f"Alert: {pl['title']}", "why": "; ".join(pl["reasons"][:3]), "confidence": 3, "emotion": "calm",
+            "checklist": [], "from_alert": a["id"]}
+    res = svc.book.place_order(pl["symbol"], p["side"], "stop", units, quote=svc.quotes.get(pl["symbol"]),
+                               env=svc.env(s), now=now, price=p["entry"], sl=p["stop"], tp=p["target"],
+                               expiry_minutes=int(pl.get("expiry_minutes") or 0) or None, plan=plan,
+                               all_quotes=svc.quotes)
+    (st.success if res["ok"] else st.error)(res["message"] + ("" if svc.running else
+                                                              " Start a price feed on the Paper trading page so it "
+                                                              "can trigger."))

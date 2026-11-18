@@ -61,7 +61,24 @@ class MT5Client:
         self._resolved[symbol] = name
         return name
 
-    def candles(self, symbol: str, timeframe: str, start, end, price: str = "M") -> pd.DataFrame:
+    def prices(self, symbols: list[str]) -> dict:
+        """Current bid/ask from the terminal (read-only)."""
+        out = {}
+        for sym in symbols:
+            try:
+                tick = self.mt5.symbol_info_tick(self.resolve(sym))
+            except MT5Error:
+                continue
+            if tick is None or not getattr(tick, "bid", 0) or not getattr(tick, "ask", 0):
+                continue
+            t = pd.Timestamp(int(tick.time), unit="s")
+            t = t.tz_localize(self.server_tz, ambiguous="NaT", nonexistent="NaT").tz_convert("UTC") \
+                if not pd.isna(t) else pd.Timestamp.now(tz="UTC")
+            out[sym] = {"bid": float(tick.bid), "ask": float(tick.ask), "time": t, "tradeable": True}
+        return out
+
+    def candles(self, symbol: str, timeframe: str, start, end, price: str = "M", include_incomplete: bool = False
+                ) -> pd.DataFrame:
         """Completed candles between start and end (UTC). Same interface as the OANDA client."""
         if timeframe not in TIMEFRAMES:
             raise MT5Error(f"Timeframe must be one of {', '.join(TIMEFRAMES)}")
@@ -86,5 +103,5 @@ class MT5Client:
         out.index.name = "ts"
         now = pd.Timestamp.now(tz="UTC")
         complete = out.index + pd.Timedelta(minutes=MINUTES[timeframe]) <= now
-        out = out[complete & (out.index >= start) & (out.index < end)]
+        out = out[(complete | include_incomplete) & (out.index >= start) & (out.index < end)]
         return out[~out.index.duplicated(keep="last")].sort_index()

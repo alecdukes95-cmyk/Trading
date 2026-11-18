@@ -157,7 +157,9 @@ def _balance(s):
                        f"{last['currency']}.")
     with t_hist:
         ev = store.load_balance_events()
-        hist = balance_history(ev, store.load_trades(), ccy, s.account_balance)
+        from edgelab.ui.state import real_trades
+
+        hist = balance_history(ev, real_trades(store), ccy, s.account_balance)
         if len(hist) > 1:
             st.line_chart(hist.rename("Balance"), height=220)
         if ev.empty:

@@ -4,7 +4,7 @@ import pytest
 from edgelab.data.sample import generate_bars
 from edgelab.data.store import Store
 
-PAGES = ["page_home", "page_signals", "page_chart", "page_backtest", "page_learn", "page_position", "page_data", "page_glossary", "page_settings"]
+PAGES = ["page_home", "page_signals", "page_paper", "page_chart", "page_backtest", "page_learn", "page_position", "page_data", "page_glossary", "page_settings"]
 
 
 @pytest.fixture
@@ -149,3 +149,36 @@ def test_replay_trainer_full_round(small_home):
     from edgelab.data.store import Store
 
     assert len(Store(db_path()).load_attempts()) == 1
+
+
+def test_paper_trading_page_replay_round_trip(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, save_settings
+    from edgelab.ui.state import get_paper
+
+    save_settings(Settings(watchlist=["EURUSD"], notify_desktop=False))
+    at = AppTest.from_string("from edgelab.ui import page_paper\npage_paper.render()", default_timeout=120)
+    at.run()
+    next(b for b in at.button if "Replay practice" in b.label).click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    svc = get_paper()
+    for _ in range(3):
+        svc.tick()
+    at.run()
+    next(b for b in at.button if b.label.startswith("Place paper")).click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert len(svc.book.positions()) == 1
+    for _ in range(400):           # replay forward until the stop or target is hit
+        svc.tick()
+        if not svc.book.positions():
+            break
+    svc.stop()
+    assert len(svc.book.positions("closed")) == 1
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    from edgelab.config import db_path
+    from edgelab.data.store import Store
+
+    t = Store(db_path()).load_trades()
+    assert (t["source"] == "paper").sum() == 1

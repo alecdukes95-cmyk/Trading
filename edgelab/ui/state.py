@@ -116,7 +116,13 @@ def balance_summary() -> BalanceSummary:
         st_.add_balance_event(pd.Timestamp.now(tz="UTC"), "set", s.account_balance, s.account_currency,
                               "Starting balance (default from settings - edit it under Settings -> Account)")
         events = st_.load_balance_events()
-    return summarise(events, st_.load_trades(), s.account_currency, s.account_balance)
+    return summarise(events, real_trades(st_), s.account_currency, s.account_balance)
+
+
+def real_trades(store) -> pd.DataFrame:
+    """Your real trades only - paper trades never touch the real balance."""
+    t = store.load_trades()
+    return t[t["source"] != "paper"] if not t.empty else t
 
 
 def risk_amount() -> float:
@@ -175,3 +181,10 @@ def get_scanner():
     from edgelab.live.scanner import ScannerService
 
     return ScannerService(db_path())
+
+
+@st.cache_resource
+def get_paper():
+    from edgelab.paper.service import PaperService
+
+    return PaperService(db_path())

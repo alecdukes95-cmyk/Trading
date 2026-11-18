@@ -113,8 +113,9 @@ class ScannerService:
     def _balance(self, settings) -> float:
         from edgelab.account import summarise
 
-        return summarise(self.store.load_balance_events(), self.store.load_trades(), settings.account_currency,
-                         settings.account_balance).balance
+        t = self.store.load_trades()
+        t = t[t["source"] != "paper"] if not t.empty else t   # paper trades never affect the real balance
+        return summarise(self.store.load_balance_events(), t, settings.account_currency, settings.account_balance).balance
 
     # ------------------------------------------------------------------ live (OANDA)
     def _history(self, symbol: str, tf: str, settings):
