@@ -31,7 +31,8 @@ On the very first launch, EdgeLab creates its sample data, which takes 10–20 s
 | **Chart** | Candlestick charts with volume, VWAP, EMA 9/20, SMA 50/200, ATR, RSI, MACD, opening range, prior-day high/low/close, and support/resistance zones. Step through history with **Previous day / Next day**. Under the chart, **What happened today?** explains the day in plain English: trend or range day, gaps, VWAP behaviour, breakouts and failed breakouts of the prior day's levels, opening-range breaks, and volume. Each explanation links to the glossary terms it uses. |
 | **Data** | Import a price CSV through a step-by-step wizard. It guesses your columns, then a data check explains any problems in plain English and offers safe fixes. You can also download crypto candles from Coinbase without an API key, and import a trade log with a column-mapping step. |
 | **Glossary** | Every term in plain English: what it is, why traders care, and the common trap. |
-| **Settings** | Account size, risk per trade, costs (spread, slippage, commission, crypto fees), display timezone and session hours. |
+| **Position & margin** | Shows what a trade means in pounds before you take it. It covers pip value, position value, **required margin** (30:1 on major pairs), **free margin**, margin level, and the loss that would trigger the broker's 50% margin close-out. It also shows the round-trip costs and whether your stop fits the 0.65% risk rule, with the widest stop and largest size that do. |
+| **Settings** | Five areas:<br>• **Account:** currency (GBP by default), balance, risk % and sizing (fixed 1 mini lot = 10,000 units, or risk-based).<br>• **Broker:** switch between profiles, or create your own, each holding spreads per pair, commission model, slippage, leverage and margin close-out.<br>• **Exchange rates:** fallback rates for currency conversion.<br>• **Timezone:** UK time by default.<br>• **Trading window:** default 08:00–17:00 UK. |
 
 ### The sample data is synthetic
 
@@ -45,13 +46,29 @@ The `sample_data` folder also contains:
 
 ## Your own data
 
+### Money: GBP account, lots, leverage and margin
+
+- **Everything is in your account currency (GBP by default).**
+  - Profits on EURUSD, GBPUSD and BTCUSD are earned in USD and converted at the GBPUSD rate.
+  - USDJPY profits are earned in yen and converted yen → USD → GBP.
+  - EURGBP profits are already in pounds.
+- **Which rate is used.** EdgeLab picks the first of these that's available:
+  1. the trade's own price when that is the rate needed (GBPUSD);
+  2. your own imported price data for the exact date (never the synthetic samples);
+  3. the reference rates in Settings. Any conversion done this way is flagged.
+- **UK (FCA) retail rules are built in:**
+  - leverage up to **30:1 on major pairs** (made only of GBP, USD, EUR, JPY, CHF and CAD), 20:1 on other pairs;
+  - margin **close-out at 50%**;
+  - **no crypto derivatives for retail clients**, so crypto is treated as unleveraged spot.
+- **Broker profiles.** Pick yours in Settings → Broker, or make a custom one. **The cost figures in the built-in profiles are placeholders, not those brokers' real prices**, so copy your broker's actual spreads and commission in.
+
 ### Times and sessions
 
 - **Trading day.** Forex days roll at **17:00 New York** (the industry convention). Crypto days roll at **00:00 UTC**.
-- **Session window.** This is the part of the day you trade, and it drives the opening range. Defaults:
-  - Forex: **08:00–17:00 London** (the London open through the London/New York overlap).
-  - Crypto: the full UTC day.
-- You can change the window under **Settings**.
+- **Session window.** This is the part of the day you trade, and it drives the opening range. The default for both forex and crypto is **08:00–17:00 UK time**. That covers the Asia/London overlap (about 08:00–09:00) and the London/New York overlap (13:00–17:00).
+- **Session shading.** The chart can shade the Asia, London and New York sessions. The "What happened today?" panel says which session the day's high, low and most of the movement happened in.
+- **Daylight saving.** Session times are computed in each city's own timezone. The weeks when US and UK clocks change on different dates (New York opens at 12:00 UK time instead of 13:00) are therefore handled automatically.
+- You can change the window under **Settings → Sessions & time**.
 
 ### Importing price data (CSV)
 
@@ -69,14 +86,15 @@ Copy `.env.example` to `.env` and paste keys there. `.env` is ignored by git, so
 
 Double-click `run_tests.bat`, or from a terminal: `.venv\Scripts\python -m pytest`.
 
-There are 53 automated checks. They cover:
+There are 77 automated checks. They cover:
 
 - **Indicators:** hand-computed values, plus a test proving no indicator uses future bars.
 - **Sessions and DST:** trading-day boundaries and daylight-saving handling.
 - **CSV parsing:** the different file formats above.
 - **The data checker:** every problem type it reports.
 - **Storage:** saving and reloading datasets and trades.
-- **Trade logs:** P&L and R calculations, including converting JPY profits to USD.
+- **Money maths:** GBP currency conversions, pip values, margin at UK leverage, round-trip costs and position sizing, each hand-checked.
+- **Trade logs:** P&L and R calculations, converted to GBP.
 - **Downloader and narrative:** the Coinbase downloader (offline, with a fake server) and the "what happened today" text.
 - **Every page of the app:** each one renders without errors.
 
@@ -91,6 +109,9 @@ edgelab/
   learning/            glossary, "what happened today" narratives
   ui/                  Streamlit pages and the Plotly chart builder
   analysis.py          adds all indicators to a price frame
+  fx.py                currency conversion (hints -> your data -> reference rates)
+  risk.py              pip value, notional, margin, costs, position sizing
+  brokers.py           broker profiles (costs, leverage, margin close-out)
 tests/                 pytest suite
 sample_data/           example CSVs (regenerate with scripts/make_sample_files.py)
 userdata/              YOUR data: edgelab.db (SQLite) and settings.json - created on first run, never committed

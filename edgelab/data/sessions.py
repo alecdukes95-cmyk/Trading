@@ -45,7 +45,8 @@ class SessionConfig:
 
 
 FOREX_SESSION = SessionConfig("America/New_York", "17:00", "Europe/London", "08:00", "17:00", True)
-CRYPTO_SESSION = SessionConfig("UTC", "00:00", "UTC", "00:00", "24:00", False)
+CRYPTO_SESSION = SessionConfig("UTC", "00:00", "Europe/London", "08:00", "17:00", False)
+FULL_DAY_CRYPTO = SessionConfig("UTC", "00:00", "UTC", "00:00", "24:00", False)
 DEFAULT_SESSIONS = {"forex": FOREX_SESSION, "crypto": CRYPTO_SESSION}
 
 
@@ -101,3 +102,53 @@ def market_open_mask(ts, cfg: SessionConfig) -> np.ndarray:
     close_min = 17 * 60
     closed = (wd == 5) | ((wd == 4) & (mins >= close_min)) | ((wd == 6) & (mins < close_min))
     return ~closed
+
+
+# --------------------------------------------------------------------------- world market sessions
+# Local business hours of the three big FX centres. Defined in each city's own timezone, so daylight
+# saving is handled automatically (UK and US change clocks on different dates, which shifts the
+# London/New York overlap for a few weeks each spring and autumn). Tokyo has no daylight saving.
+MARKET_SESSIONS = {
+    "Asia (Tokyo)": ("Asia/Tokyo", "09:00", "18:00"),
+    "London": ("Europe/London", "08:00", "17:00"),
+    "New York": ("America/New_York", "08:00", "17:00"),
+}
+
+
+def session_membership(ts) -> pd.DataFrame:
+    """One boolean column per market session: is this bar inside that city's business hours (weekdays)?"""
+    idx = ensure_utc_index(ts)
+    out = {}
+    for name, (tz, start, end) in MARKET_SESSIONS.items():
+        local = idx.tz_convert(tz)
+        mins = np.asarray(local.hour * 60 + local.minute)
+        wd = np.asarray(local.weekday)
+        out[name] = (mins >= _minutes(start)) & (mins < _minutes(end)) & (wd < 5)
+    return pd.DataFrame(out, index=idx)
+
+
+def session_label(ts) -> list[str]:
+    """Human label for each bar: e.g. 'London/New York overlap', 'Asia/London overlap', 'Asia only'."""
+    m = session_membership(ts)
+    short = {"Asia (Tokyo)": "Asia", "London": "London", "New York": "New York"}
+    labels = []
+    for row in m.itertuples(index=False):
+        active = [short[n] for n, on in zip(m.columns, row) if on]
+        if not active:
+            labels.append("outside the main sessions")
+        elif len(active) == 1:
+            labels.append(f"{active[0]} session")
+        else:
+            labels.append("/".join(active) + " overlap")
+    return labels
+
+
+def session_times_today(tz: str = "Europe/London", day: pd.Timestamp | None = None) -> dict[str, tuple[str, str]]:
+    """Each market session's hours converted into `tz` for a given day (default today)."""
+    day = pd.Timestamp(day or pd.Timestamp.now(tz="UTC")).tz_localize(None).normalize()
+    out = {}
+    for name, (stz, start, end) in MARKET_SESSIONS.items():
+        s = pd.Timestamp(f"{day:%Y-%m-%d} {start}").tz_localize(stz).tz_convert(tz)
+        e = pd.Timestamp(f"{day:%Y-%m-%d} {end}").tz_localize(stz).tz_convert(tz)
+        out[name] = (s.strftime("%H:%M"), e.strftime("%H:%M"))
+    return out

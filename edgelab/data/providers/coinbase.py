@@ -12,7 +12,7 @@ import pandas as pd
 BASE_URL = "https://api.exchange.coinbase.com"
 GRANULARITY = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "1d": 86400}
 MAX_CANDLES = 300
-PRODUCTS = {"BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD", "SOLUSD": "SOL-USD"}
+PRODUCTS = {"BTCGBP": "BTC-GBP", "ETHGBP": "ETH-GBP", "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD", "SOLUSD": "SOL-USD"}
 
 
 class ProviderError(RuntimeError):

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from edgelab.data.sessions import session_label
 from edgelab.instruments import Instrument
 
 
@@ -20,7 +21,8 @@ class Story:
 
 
 def _t(ts: pd.Timestamp, tz: str) -> str:
-    return ts.tz_convert(tz).strftime("%H:%M")
+    # weekday included because a forex trading day starts the previous evening (17:00 New York)
+    return ts.tz_convert(tz).strftime("%a %H:%M")
 
 
 def session_story(df: pd.DataFrame, day: pd.Timestamp, inst: Instrument, display_tz: str = "UTC",
@@ -99,8 +101,17 @@ def session_story(df: pd.DataFrame, day: pd.Timestamp, inst: Instrument, display
     # Time of high and low
     t_hi, t_lo = d["high"].idxmax(), d["low"].idxmin()
     first, second = ("low", "high") if t_lo < t_hi else ("high", "low")
-    bullets.append(f"The day's {first} came first (at {_t(min(t_hi, t_lo), display_tz)}) and the {second} later "
-                   f"(at {_t(max(t_hi, t_lo), display_tz)}, {display_tz}).")
+    lab_first, lab_second = session_label([min(t_hi, t_lo), max(t_hi, t_lo)])
+    bullets.append(f"The day's {first} came first (at {_t(min(t_hi, t_lo), display_tz)}, {lab_first}) and the "
+                   f"{second} later (at {_t(max(t_hi, t_lo), display_tz)}, {lab_second}). Times in {display_tz}.")
+    if "vwap" in d:  # how much of the day's movement happened in each session
+        labels = pd.Series(session_label(d.index), index=d.index)
+        moves = (d["high"] - d["low"]).groupby(labels).sum()
+        if moves.sum() > 0:
+            top = moves.idxmax()
+            bullets.append(f"Most of the day's price action ({moves.max() / moves.sum() * 100:.0f}% of total bar "
+                           f"ranges) happened during the **{top}**.")
+            terms.append("Session overlap" if "overlap" in top else "Session")
 
     # VWAP
     if "vwap" in d and d["vwap"].notna().any():

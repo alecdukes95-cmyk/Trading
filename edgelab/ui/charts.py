@@ -8,10 +8,13 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from edgelab.data.sessions import session_membership
 from edgelab.indicators.levels import Level
 
 UP = "#26a69a"
 DOWN = "#ef5350"
+SESSION_COLORS = {"Asia (Tokyo)": "#ef6c00", "London": "#1565c0", "New York": "#2e7d32"}
+SESSION_SHORT = {"Asia (Tokyo)": "Asia", "London": "London", "New York": "New York"}
 COLORS = {
     "vwap": "#f5a623", "ema_fast": "#42a5f5", "ema_slow": "#ab47bc", "sma_mid": "#8d6e63", "sma_long": "#546e7a",
     "or": "#7e57c2", "pdh": "#2e7d32", "pdl": "#c62828", "pdc": "#757575", "support": "#2e7d32",
@@ -99,6 +102,19 @@ def build_chart(df: pd.DataFrame, opts: ChartOptions, tz: str = "UTC", title: st
         fig.add_hline(y=lv.price, line=dict(color=c, width=1, dash="longdash"), opacity=0.7, row=1, col=1,
                       annotation_text=f"{lv.kind} ({lv.touches} touches)", annotation_position="top left",
                       annotation_font_size=10, annotation_font_color=c)
+
+    if "sessions" in ov and not daily:
+        mem = session_membership(df.index)
+        for name, color in SESSION_COLORS.items():
+            on = mem[name].to_numpy()
+            if not on.any():
+                continue
+            edges = np.flatnonzero(np.diff(np.r_[0, on.astype(int), 0]))
+            for a, b in zip(edges[::2], edges[1::2] - 1):
+                fig.add_vrect(x0=x[a], x1=x[b], fillcolor=color, opacity=0.10, line_width=0, layer="below",
+                              row="all", col=1)
+                fig.add_annotation(x=x[a], y=1.0, yref="y domain", text=SESSION_SHORT[name], showarrow=False,
+                                   xanchor="left", yanchor="top", font=dict(size=9, color=color), row=1, col=1)
 
     if opts.show_day_separators and boundaries:
         for i in sorted(boundaries):

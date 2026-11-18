@@ -7,7 +7,7 @@ from edgelab.data.tradelog import ALL_FIELDS, REQUIRED, build_trades, guess_trad
 from edgelab.data.validate import clean_ohlcv, validate_ohlcv
 from edgelab.instruments import get_instrument, normalize_symbol
 from edgelab.timeutil import bar_minutes, timeframe_label
-from edgelab.ui.state import datasets, get_settings, get_store, severity_box
+from edgelab.ui.state import datasets, get_converter, get_settings, get_store, severity_box
 
 TZ_CHOICES = {
     "UTC": "UTC / GMT (most APIs, many exports)",
@@ -69,9 +69,12 @@ def _csv_wizard():
     symbol = normalize_symbol(c1.text_input("Symbol", value=guess_symbol(up.name), help="e.g. EURUSD, BTCUSD"))
     inst = get_instrument(symbol or "X")
     asset_class = c2.selectbox("Market", ["forex", "crypto"], index=0 if inst.asset_class == "forex" else 1)
-    tz = c3.selectbox("Timezone of the timestamps", list(TZ_CHOICES), format_func=lambda k: f"{k} - {TZ_CHOICES[k]}",
-                      help="Which clock the file was written in. If unsure, pick UTC; the checker will tell you "
-                           "if the forex weekly open looks shifted.")
+    tz_keys = list(TZ_CHOICES)
+    broker_tz = get_settings().broker().csv_timezone
+    tz = c3.selectbox("Timezone of the timestamps", tz_keys, index=tz_keys.index(broker_tz) if broker_tz in tz_keys else 0,
+                      format_func=lambda k: f"{k} - {TZ_CHOICES[k]}",
+                      help="Which clock the file was written in. Pre-selected from your broker profile. If "
+                           "unsure, pick UTC; the checker will tell you if the forex weekly open looks shifted.")
     order = c4.selectbox("Date order", list(DATE_ORDER))
 
     if st.button("Check data", type="primary"):
@@ -113,8 +116,9 @@ def _csv_wizard():
 # --------------------------------------------------------------------------- crypto download
 def _crypto_download():
     st.markdown(
-        "Download crypto candles from **Coinbase's public market data** - no account or API key needed. "
-        "Read-only: this cannot place orders.")
+        "Download crypto candles from **Coinbase's public market data** - no account or API key needed, and it "
+        "works from the UK. GBP markets (BTCGBP, ETHGBP) are priced directly in pounds. Read-only: this cannot "
+        "place orders.")
     c1, c2, c3 = st.columns(3)
     sym = c1.selectbox("Market", list(coinbase.PRODUCTS))
     tf = c2.selectbox("Timeframe", ["5m", "15m", "1h", "1d"])
@@ -175,11 +179,14 @@ def _trade_log_wizard():
     default_symbol = c1.text_input("Symbol (if the file has no symbol column)", value=guess_symbol(up.name))
     tz = c2.selectbox("Timezone of the times", list(TZ_CHOICES), key="trade_tz")
     order = c3.selectbox("Date order", list(DATE_ORDER), key="trade_order")
-    st.caption("Size means units (e.g. 10,000 units = 0.1 lot on forex; coins for crypto). P&L is converted to "
-               f"{get_settings().account_currency} where possible. Fees are assumed to be in the account currency.")
+    ccy = get_settings().account_currency
+    st.caption(f"Size means units (10,000 units = 1 mini lot = 0.1 lot on forex; coins for crypto). P&L is converted "
+               f"to {ccy} at the exit-time exchange rate, using your own imported price data where it covers the date "
+               "and the reference rates in Settings otherwise. Fees/commission are assumed to be in "
+               f"{ccy} already.")
     if st.button("Check trades", type="primary"):
         try:
-            res = build_trades(raw, mapping, tz, default_symbol, DATE_ORDER[order], get_settings().account_currency)
+            res = build_trades(raw, mapping, tz, default_symbol, DATE_ORDER[order], ccy, get_converter())
         except ValueError as e:
             st.error(str(e))
             return
@@ -193,7 +200,7 @@ def _trade_log_wizard():
     st.markdown(f"**{len(t)} valid trades.**")
     if not t.empty:
         st.dataframe(t[["symbol", "side", "entry_time", "exit_time", "entry_price", "exit_price", "size", "fees",
-                        "pnl", "r_multiple"]].head(50), hide_index=True)
+                        "pnl", "pnl_currency", "r_multiple", "rate_source"]].head(50), hide_index=True)
         if st.button(f"Save {len(t)} trades"):
             n = get_store().save_trades(t, source=f"import:{fname}")
             st.session_state.pop("trade_build", None)
@@ -209,7 +216,11 @@ def _trade_summary():
     c1, c2, c3 = st.columns(3)
     c1.metric("Trades", len(t))
     c2.metric("Win rate", f"{wins:.0f}%")
-    c3.metric("Total P&L", f"{t['pnl'].sum():,.2f}")
+    ccys = t["pnl_currency"].dropna().unique() if "pnl_currency" in t else []
+    c3.metric("Total P&L", f"{t['pnl'].sum():,.2f} {ccys[0] if len(ccys) == 1 else ''}")
+    if len(ccys) > 1:
+        st.warning("These trades were imported with different account currencies, so the total mixes currencies. "
+                   "Delete and re-import them.")
     if len(t) < 30:
         st.caption(f"Only {len(t)} trades - far too few to judge a strategy. Treat these numbers as anecdotes.")
     if st.button("Delete all imported trades"):

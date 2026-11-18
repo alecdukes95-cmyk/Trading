@@ -48,12 +48,13 @@ CREATE TABLE IF NOT EXISTS trades (
     notes TEXT,
     pnl REAL,
     r_multiple REAL,
-    imported_at TEXT
+    imported_at TEXT,
+    pnl_currency TEXT
 );
 """
 
 TRADE_COLUMNS = ["source", "symbol", "side", "entry_ts", "exit_ts", "entry_price", "exit_price", "size", "fees",
-                 "stop_price", "setup", "notes", "pnl", "r_multiple"]
+                 "stop_price", "setup", "notes", "pnl", "r_multiple", "pnl_currency"]
 
 
 def _now() -> str:
@@ -66,6 +67,9 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as c:
             c.executescript(SCHEMA)
+            cols = {r[1] for r in c.execute("PRAGMA table_info(trades)")}
+            if "pnl_currency" not in cols:  # databases created by version 0.1
+                c.execute("ALTER TABLE trades ADD COLUMN pnl_currency TEXT")
 
     @contextmanager
     def _conn(self):

@@ -13,6 +13,7 @@ from edgelab.ui.page_glossary import term_expanders
 from edgelab.ui.state import get_settings, get_store, indicator_frame, pick_dataset
 
 OVERLAYS = {
+    "sessions": ("Market sessions (Asia / London / New York)", "Session"),
     "vwap": ("VWAP", "VWAP"),
     "ema_fast": ("EMA 9", "Moving average"),
     "ema_slow": ("EMA 20", "Moving average"),
@@ -47,8 +48,8 @@ def render():
                         help=help_text("Timeframe"))
     daily = timeframe_minutes(tf) >= 1440
 
-    default_ov = ["ema_fast", "ema_slow", "sma_mid"] if daily else ["vwap", "ema_fast", "ema_slow", "or", "pdhl"]
-    ov_options = [k for k in OVERLAYS if not (daily and k in ("vwap", "or", "pdhl"))]
+    default_ov = ["ema_fast", "ema_slow", "sma_mid"] if daily else ["sessions", "vwap", "ema_fast", "ema_slow", "or", "pdhl"]
+    ov_options = [k for k in OVERLAYS if not (daily and k in ("vwap", "or", "pdhl", "sessions"))]
     overlays = side.multiselect("Overlays", ov_options, default=[d for d in default_ov if d in ov_options],
                                 format_func=lambda k: OVERLAYS[k][0],
                                 help="Lines drawn on top of the price chart. Open 'What am I looking at?' below "
@@ -112,7 +113,9 @@ def render():
     fig = build_chart(view, opts, tz=s.display_tz, title=title, daily=daily, trades=trades)
     st.plotly_chart(fig, config={"scrollZoom": True, "displaylogo": False})
     st.caption("Drag to pan, scroll to zoom, double-click to reset. Hover for values. Gaps such as the forex "
-               "weekend are removed so candles sit side by side.")
+               "weekend are removed so candles sit side by side."
+               + (" Shading: orange = Asia, blue = London, green = New York; where two overlap the colours mix."
+                  if "sessions" in overlays and not daily else ""))
 
     # ---- explanations
     left, right = st.columns([3, 2])

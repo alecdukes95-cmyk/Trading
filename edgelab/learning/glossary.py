@@ -50,11 +50,19 @@ _T = [
          "Daily candles, the prior-day high/low and VWAP resets all depend on where the day starts.",
          "Different brokers use different day boundaries, so their daily candles can differ slightly."),
     Term("Session", "Chart basics",
-         "Forex activity moves around the world: Asia (Tokyo), then London (from 08:00 UK), then New York "
-         "(from 08:00 NY). The London/New York overlap (about 13:00-17:00 UK) is usually the busiest.",
-         "Volatility and volume cluster in the London and New York sessions; many setups only work when the "
-         "market is active.",
-         "Asia-session ranges are often small; breakouts there fail more often."),
+         "Forex activity follows the business day around the world. In UK time: Asia/Tokyo about 00:00-09:00 "
+         "(01:00-10:00 in British summer time), London 08:00-17:00, New York 13:00-22:00. The busiest periods are "
+         "the overlaps: Asia/London around 08:00-09:00 and London/New York 13:00-17:00.",
+         "Volatility and volume cluster in the London session and especially the London/New York overlap; many "
+         "setups only work when the market is active. The chart can shade each session for you.",
+         "For a few weeks each spring and autumn the US and UK change clocks on different dates, so New York "
+         "opens at 12:00 UK time instead of 13:00. Asia-only hours are usually quiet and breakouts there fail more."),
+    Term("Session overlap", "Chart basics",
+         "A period when two major centres are open at once: Asia/London (early London morning) and London/New "
+         "York (UK afternoon).",
+         "Overlaps bring the most participants, the tightest spreads and the biggest moves of the day, especially "
+         "London/New York, when US economic data is released (usually 13:30 UK time).",
+         "Big moves also mean bigger slippage around news releases."),
     # ---- volume
     Term("Volume", "Volume",
          "How much traded during a bar. For crypto it is the amount of coin exchanged on that exchange.",
@@ -158,7 +166,7 @@ _T = [
     Term("Pip", "Costs & sizing",
          "The standard unit of forex price movement: 0.0001 for most pairs (EURUSD 1.0850 -> 1.0851), 0.01 for "
          "JPY pairs.",
-         "Stops, targets, spreads and P&L are usually discussed in pips. On EURUSD, 1 pip on 10,000 units is about $1."),
+         "Stops, targets, spreads and P&L are usually discussed in pips. On EURUSD, 1 pip on 10,000 units (a mini lot) is $1, about 79p at GBPUSD 1.27."),
     Term("Spread", "Costs & sizing",
          "The difference between the buy (ask) and sell (bid) price. You pay it every time you open a trade.",
          "On small intraday targets the spread can be a large fraction of the profit. A 1-pip spread on a 5-pip "
@@ -172,6 +180,38 @@ _T = [
          "The broker's or exchange's fee per trade (some forex brokers charge it instead of a wider spread; "
          "crypto exchanges charge a % of trade value).",
          "Costs are charged on every trade, win or lose. High trade frequency multiplies them."),
+    Term("Lot", "Costs & sizing",
+         "The standard way to size forex trades. 1 standard lot = 100,000 units of the base currency; 1 mini lot = "
+         "10,000 (0.1 lot); 1 micro lot = 1,000 (0.01 lot). 1 mini lot of EURUSD = EUR 10,000.",
+         "Size sets how much each pip is worth: on EURUSD a mini lot makes about $1 (roughly 80p) per pip.",
+         "Lot size alone says nothing about risk - risk is size x stop distance."),
+    Term("Pip value", "Costs & sizing",
+         "How much money one pip is worth for your position, in your account currency. For EURUSD it is "
+         "0.0001 x units in USD, converted to GBP at the GBPUSD rate.",
+         "Multiply pip value by your stop distance to get the money at risk.",
+         "Pip value changes with exchange rates: a USDJPY pip is worth more in GBP when the yen is strong."),
+    Term("Notional value", "Costs & sizing",
+         "The full value of the position you control, e.g. 10,000 EUR = about GBP 8,500.",
+         "Your gains and losses are on the whole notional value, not just the margin you put down."),
+    Term("Leverage", "Costs & sizing",
+         "Controlling a position larger than the money deposited for it. 30:1 means GBP 1 of margin controls GBP 30 "
+         "of currency. UK (FCA) retail limits: 30:1 on major pairs, 20:1 on other pairs; crypto derivatives "
+         "can't be sold to retail clients at all.",
+         "Leverage lets a small account trade meaningful sizes; it magnifies losses exactly as much as gains.",
+         "Leverage doesn't change how much a pip is worth - your position size does. Risk comes from size x stop."),
+    Term("Margin", "Costs & sizing",
+         "The deposit the broker sets aside to keep a leveraged position open: position value / leverage. A mini "
+         "lot of EURUSD at 30:1 needs about GBP 285 of margin.",
+         "Margin limits how many positions you can hold at once.",
+         "Margin is not the most you can lose. You can lose more than the margin on a trade."),
+    Term("Free margin", "Costs & sizing",
+         "Equity minus the margin already in use: the money available to open new positions or absorb losses.",
+         "If free margin goes to zero you can't open trades, and losses start eating into the margin itself."),
+    Term("Margin level", "Costs & sizing",
+         "Equity / used margin x 100%. Above 100% is healthy. UK brokers must start closing your positions "
+         "('margin close-out') when it falls to 50%.",
+         "A falling margin level is a warning that losses are building against the deposit.",
+         "A stop-loss should get you out long before a margin close-out."),
     Term("Position sizing", "Costs & sizing",
          "Choosing how big each trade is so that hitting your stop loses a fixed amount (e.g. 0.65% of the account).",
          "Size = risk amount / stop distance. This keeps every loss the same size regardless of where the stop is.",

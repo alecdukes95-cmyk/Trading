@@ -10,6 +10,7 @@ from edgelab.data.resample import resample_ohlcv
 from edgelab.data.sample import ensure_sample_data
 from edgelab.data.sessions import SessionConfig
 from edgelab.data.store import Store
+from edgelab.fx import FxConverter, converter_from_store
 from edgelab.timeutil import timeframe_minutes
 
 
@@ -37,6 +38,18 @@ def ensure_samples() -> None:
     bar = st.progress(0.0, text="First launch: creating sample data (about 10-20 seconds, only once)...")
     ensure_sample_data(store, progress=lambda f, msg: bar.progress(min(1.0, f), text=msg))
     bar.empty()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def _own_series(ids_key: tuple) -> dict:
+    return converter_from_store(get_store()).series
+
+
+def get_converter() -> FxConverter:
+    """Currency converter: your own price data first, then the reference rates in Settings."""
+    ds = datasets()
+    key = tuple(ds.loc[ds["is_sample"] == 0, "id"].tolist()) if not ds.empty else ()
+    return FxConverter(reference=dict(get_settings().reference_rates), series=_own_series(key))
 
 
 def datasets() -> pd.DataFrame:

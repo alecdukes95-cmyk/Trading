@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 FX_CURRENCIES = {"USD", "EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD", "SEK", "NOK", "SGD", "HKD", "MXN", "ZAR", "TRY", "XAU", "XAG"}
-CRYPTO_QUOTES = ("USDT", "USDC", "USD", "EUR", "BTC")
+CRYPTO_QUOTES = ("USDT", "USDC", "USD", "GBP", "EUR", "BTC")
+MAJOR_CCYS = {"USD", "EUR", "GBP", "JPY", "CHF", "CAD"}
 
 
 @dataclass(frozen=True)
@@ -36,27 +37,25 @@ class Instrument:
         pct = f" ({delta / ref_price * 100:+.2f}%)" if ref_price else ""
         return f"{delta:+,.{self.decimals}f}{pct}"
 
-    def quote_to_account(self, amount_quote: float, price: float, account_ccy: str = "USD") -> float | None:
-        """Convert a P&L amount in quote currency to the account currency.
-
-        Returns None when a conversion rate is not available (e.g. EURGBP with a USD account).
-        """
-        if self.quote == account_ccy or (self.quote in ("USDT", "USDC") and account_ccy == "USD"):
-            return amount_quote
-        if self.base == account_ccy and price:
-            return amount_quote / price
-        return None
+    @property
+    def leverage_class(self) -> str:
+        """FCA/ESMA categories: 'fx_major' (only USD, EUR, GBP, JPY, CHF, CAD), 'fx_minor', or 'crypto'."""
+        if not self.is_forex:
+            return "crypto"
+        return "fx_major" if {self.base, self.quote} <= MAJOR_CCYS else "fx_minor"
 
 
 INSTRUMENTS: dict[str, Instrument] = {
     "EURUSD": Instrument("EURUSD", "forex", "EUR", "USD", 0.0001, 5, 1.0850, 0.0040, 320),
     "GBPUSD": Instrument("GBPUSD", "forex", "GBP", "USD", 0.0001, 5, 1.2700, 0.0048, 300),
     "USDJPY": Instrument("USDJPY", "forex", "USD", "JPY", 0.01, 3, 150.00, 0.0052, 330),
+    "EURGBP": Instrument("EURGBP", "forex", "EUR", "GBP", 0.0001, 5, 0.8550, 0.0035, 250),
+    "GBPJPY": Instrument("GBPJPY", "forex", "GBP", "JPY", 0.01, 3, 190.00, 0.0065, 350),
     "BTCUSD": Instrument("BTCUSD", "crypto", "BTC", "USD", 1.0, 2, 65000.0, 0.024, 12.0),
     "ETHUSD": Instrument("ETHUSD", "crypto", "ETH", "USD", 0.1, 2, 3200.0, 0.032, 150.0),
 }
 
-SAMPLE_SYMBOLS = list(INSTRUMENTS)
+SAMPLE_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "BTCUSD", "ETHUSD"]
 
 
 def normalize_symbol(symbol: str) -> str:

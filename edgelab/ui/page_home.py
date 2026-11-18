@@ -1,10 +1,12 @@
 import streamlit as st
 
+from edgelab.ui.page_settings import money
 from edgelab.ui.state import datasets, get_settings
 
 STAGES = [
     ("1. Data intake + chart reader", "ready", "Import CSV / download crypto, validation report, indicator charts, "
-     "'what happened today' explanations, glossary."),
+     "session shading, 'what happened today' explanations, glossary, GBP account with broker profiles and a "
+     "position & margin calculator."),
     ("2. Pattern detection + 'explain this'", "next", "Auto-annotated breakouts, failed breakouts, engulfing/pin bars, "
      "VWAP reclaims, opening-range breaks, volume climaxes, structure - with stats from your data."),
     ("3. Learning mode", "planned", "Bar-by-bar replay with scoring, quizzes from real charts, concept library, progress."),
@@ -25,16 +27,22 @@ def render():
     c1, c2, c3 = st.columns(3)
     c1.metric("Datasets loaded", len(ds))
     c2.metric("Your own datasets", int((ds["is_sample"] == 0).sum()) if not ds.empty else 0)
-    c3.metric("Risk per trade", f"{s.risk_pct:.2f}% (${s.risk_amount:,.0f})")
+    c3.metric("Risk per trade", f"{s.risk_pct:.2f}% ({money(s.risk_amount, s.account_currency)})")
+    st.caption(f"Account: {money(s.account_balance, s.account_currency)} | broker profile: {s.broker().name} | "
+               f"forex size: {s.forex_fixed_units:,} units ({s.forex_fixed_units / 100_000:.2f} lots) | "
+               f"times in {s.display_tz}. Change these under Settings.")
 
     st.subheader("Start here")
     st.markdown(
         """
 1. **Chart** - open a sample chart (EURUSD, GBPUSD, USDJPY, BTCUSD, ETHUSD). Turn indicators on and off and read the
    *What happened today?* panel under the chart. Use **Previous day / Next day** to step through history.
-2. **Glossary** - every term used in the app, in plain English. Most widgets also have a **?** tooltip.
-3. **Data** - import your own CSV export (or download crypto candles). The validator explains any problems it finds.
-4. **Settings** - your account size, risk per trade, costs, timezone and session hours.
+2. **Position & margin** - see what 1 mini lot means in pounds: pip value, required and free margin, costs,
+   and whether a stop fits your risk-per-trade rule.
+3. **Glossary** - every term used in the app, in plain English. Most widgets also have a **?** tooltip.
+4. **Data** - import your own CSV export (or download crypto candles). The validator explains any problems it finds.
+5. **Settings** - account balance and currency, risk per trade, **broker profile** (spreads, commission, leverage),
+   exchange rates, timezone and session hours.
 """
     )
     st.warning(

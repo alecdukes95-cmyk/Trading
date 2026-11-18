@@ -9,6 +9,7 @@ import pandas as pd
 from edgelab.data.loader import guess_mapping
 from edgelab.data.timeparse import parse_timestamps
 from edgelab.data.validate import Issue
+from edgelab.fx import FxConverter
 from edgelab.instruments import get_instrument, normalize_symbol
 
 REQUIRED = ["entry_time", "exit_time", "entry_price", "exit_price", "size", "side"]
@@ -70,32 +71,42 @@ class TradeBuildResult:
     issues: list[Issue] = field(default_factory=list)
 
 
-def compute_pnl(trades: pd.DataFrame, account_ccy: str = "USD") -> pd.DataFrame:
-    """Add pnl (account currency, after fees) and r_multiple (if a stop price is given)."""
+def compute_pnl(trades: pd.DataFrame, account_ccy: str = "GBP", conv: FxConverter | None = None) -> pd.DataFrame:
+    """Add pnl (account currency, after fees), r_multiple (if a stop is given) and rate_source.
+
+    The quote-currency profit is converted at the exchange rate at the EXIT time. The trade's own exit
+    price is used where it is the conversion rate (e.g. USD profit on GBPUSD for a GBP account).
+    R is computed with the same rate, so it reflects the price move and fees only.
+    """
+    conv = conv or FxConverter()
     t = trades.copy()
     direction = np.where(t["side"] == "long", 1.0, -1.0)
     gross_quote = (t["exit_price"] - t["entry_price"]) * t["size"] * direction
-    fees = t["fees"].fillna(0.0) if "fees" in t else 0.0
-    pnl, risk = [], []
-    for i, (sym, g, px, entry, stop, size) in enumerate(zip(t["symbol"], gross_quote, t["exit_price"],
-                                                             t["entry_price"], t.get("stop_price", pd.Series(np.nan, index=t.index)),
-                                                             t["size"])):
+    fees = t["fees"].fillna(0.0).to_numpy(float) if "fees" in t else np.zeros(len(t))
+    stops = t["stop_price"] if "stop_price" in t else pd.Series(np.nan, index=t.index)
+    pnl, risk, src = [], [], []
+    for sym, g, px, entry, stop, size, when in zip(t["symbol"], gross_quote, t["exit_price"], t["entry_price"],
+                                                    stops, t["size"], t["exit_time"]):
         inst = get_instrument(sym)
-        conv = inst.quote_to_account(g, px, account_ccy)
-        pnl.append(np.nan if conv is None else conv)
-        if pd.notna(stop):
-            r_quote = abs(entry - stop) * size
-            rc = inst.quote_to_account(r_quote, entry, account_ccy)
-            risk.append(np.nan if (rc is None or rc == 0) else rc)
-        else:
+        hints = {inst.symbol.replace("USDT", "USD").replace("USDC", "USD"): px}
+        look = conv.lookup(inst.quote, account_ccy, when, hints)
+        src.append(look.source)
+        if look.rate is None:
+            pnl.append(np.nan)
             risk.append(np.nan)
-    t["pnl"] = np.asarray(pnl) - np.asarray(fees, dtype=float)
-    t["r_multiple"] = t["pnl"] / np.asarray(risk)
+            continue
+        pnl.append(g * look.rate)
+        risk.append(abs(entry - stop) * size * look.rate if pd.notna(stop) and stop != entry else np.nan)
+    t["pnl"] = np.asarray(pnl, dtype=float) - fees
+    t["r_multiple"] = t["pnl"] / np.asarray(risk, dtype=float)
+    t["rate_source"] = src
+    t["pnl_currency"] = account_ccy
     return t
 
 
 def build_trades(raw: pd.DataFrame, mapping: dict[str, str | None], source_tz: str = "UTC",
-                 default_symbol: str = "", dayfirst: bool | None = None, account_ccy: str = "USD") -> TradeBuildResult:
+                 default_symbol: str = "", dayfirst: bool | None = None, account_ccy: str = "GBP",
+                 conv: FxConverter | None = None) -> TradeBuildResult:
     missing = [f for f in REQUIRED if not mapping.get(f)]
     if missing:
         raise ValueError(f"Please choose which column holds: {', '.join(missing)}")
@@ -114,7 +125,7 @@ def build_trades(raw: pd.DataFrame, mapping: dict[str, str | None], source_tz: s
             t[f] = pd.to_numeric(col, errors="coerce")
         else:
             t[f] = np.nan if f == "stop_price" else (0.0 if f == "fees" else np.nan)
-    t["fees"] = t["fees"].abs()
+    t["fees"] = t["fees"].abs().fillna(0.0)
     t["side"] = raw[mapping["side"]].map(normalize_side)
     # Some platforms encode side as the sign of the quantity
     neg = t["size"] < 0
@@ -155,12 +166,20 @@ def build_trades(raw: pd.DataFrame, mapping: dict[str, str | None], source_tz: s
                             "Without the initial stop, results can't be measured in R (multiples of the amount "
                             "risked). Dollar P&L still works. Add a stop column to unlock R-based stats."))
     good = t[~bad_any].copy()
-    good = compute_pnl(good, account_ccy)
+    conv = conv or FxConverter()
+    good = compute_pnl(good, account_ccy, conv)
     unconverted = good["pnl"].isna()
     if unconverted.any():
         issues.append(Issue("warning", "no_conversion", "P&L currency conversion not possible",
-                            f"{int(unconverted.sum())} trades are in pairs whose profit is not in {account_ccy} "
-                            "(e.g. EURGBP). Their P&L is left blank for now.", ""))
+                            f"{int(unconverted.sum())} trades have profit in a currency with no exchange rate to "
+                            f"{account_ccy}. Add a reference rate in Settings. Their P&L is left blank.", ""))
+    n_ref = int((good["rate_source"] == "reference").sum())
+    if n_ref:
+        issues.append(Issue("info", "reference_rates", f"Converted to {account_ccy} with reference rates",
+                            f"{n_ref} trades were converted using the fixed reference rates in Settings "
+                            f"({conv.describe_reference()}), because none of your own price data covers their "
+                            "exit dates. Import GBPUSD (and USDJPY) data for those dates for exact conversions.",
+                            "Optional: import matching price data, then re-import the log."))
     if len(good) < 30:
         issues.append(Issue("info", "small_sample", "Small sample",
                             f"Only {len(good)} valid trades. Statistics from fewer than ~30 trades (and ideally "

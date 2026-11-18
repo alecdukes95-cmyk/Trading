@@ -4,7 +4,7 @@ import pytest
 from edgelab.data.sample import generate_bars
 from edgelab.data.store import Store
 
-PAGES = ["page_home", "page_chart", "page_data", "page_glossary", "page_settings"]
+PAGES = ["page_home", "page_chart", "page_position", "page_data", "page_glossary", "page_settings"]
 
 
 @pytest.fixture
@@ -47,3 +47,28 @@ def test_chart_page_daily_and_navigation(small_home):
     at.sidebar.selectbox[1].set_value("15m").run()
     at.sidebar.multiselect[1].set_value(["volume", "rsi", "macd", "atr"]).run()
     assert not at.exception
+
+
+def test_position_page_interactions(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_string("from edgelab.ui import page_position\npage_position.render()", default_timeout=60)
+    at.run()
+    assert not at.exception
+    assert any("Required margin" in m.label for m in at.metric)
+    for sym in ("USDJPY", "GBPUSD", "BTCUSD"):
+        at.selectbox[0].set_value(sym).run()
+        assert not at.exception, sym
+
+
+def test_settings_broker_switch(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_string("from edgelab.ui import page_settings\npage_settings.render()", default_timeout=60)
+    at.run()
+    broker_box = next(sb for sb in at.selectbox if sb.label == "Active broker")
+    broker_box.set_value("IG").run()
+    assert not at.exception
+    from edgelab.config import load_settings
+
+    assert load_settings().active_broker == "IG"

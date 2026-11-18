@@ -39,7 +39,7 @@ def test_side_normalization():
 
 
 def test_pnl_conversion_r_multiple_and_bad_rows():
-    res = build_trades(_raw_log(), guess_trade_mapping(_raw_log().columns))
+    res = build_trades(_raw_log(), guess_trade_mapping(_raw_log().columns), account_ccy="USD")
     t = res.trades
     assert len(t) == 3  # the exit-before-entry row is rejected
     assert "exit_before_entry" in {i.code for i in res.issues}
