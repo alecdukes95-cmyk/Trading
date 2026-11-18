@@ -62,6 +62,10 @@ CREATE TABLE IF NOT EXISTS replay_attempts (
     hindsight TEXT, read_correct INTEGER, result TEXT, r REAL, rr REAL, stop_atr REAL,
     score INTEGER, pattern TEXT, synthetic INTEGER
 );
+CREATE TABLE IF NOT EXISTS quiz_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, qtype TEXT, topic TEXT, symbol TEXT, timeframe TEXT,
+    correct INTEGER, chosen TEXT, answer TEXT
+);
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -217,6 +221,16 @@ class Store:
         if not df.empty:
             df["bar_time"] = from_epoch_seconds(df["bar_ts"])
         return df
+
+    def add_quiz_attempt(self, qtype: str, topic: str, correct: bool, chosen: str, answer: str, symbol: str = "",
+                         timeframe: str = "") -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO quiz_attempts (created_at, qtype, topic, symbol, timeframe, correct, chosen, answer) "
+                      "VALUES (?,?,?,?,?,?,?,?)", (_now(), qtype, topic, symbol, timeframe, int(correct), chosen, answer))
+
+    def load_quiz_attempts(self) -> pd.DataFrame:
+        with self._conn() as c:
+            return pd.read_sql_query("SELECT * FROM quiz_attempts ORDER BY id", c)
 
     def clear_attempts(self) -> None:
         with self._conn() as c:

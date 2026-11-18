@@ -251,3 +251,38 @@ def test_monte_carlo_and_paper_with_zero_balance(small_home):
     next(b for b in at.button if "Run Monte Carlo simulation" in b.label).click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("Chance of being up" in m.label for m in at.metric)
+
+
+def test_concepts_page_every_example(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, save_settings
+    from edgelab.learning.concepts import CONCEPTS
+
+    save_settings(Settings(watchlist=["EURUSD"]))
+    at = AppTest.from_string("from edgelab.ui import page_concepts\npage_concepts.render()", default_timeout=120)
+    at.run()
+    for c in CONCEPTS:
+        at.selectbox(key="cc_key").set_value(c.key).run()
+        assert not at.exception, (c.key, [e.value for e in at.exception])
+        assert not any("Example unavailable" in i.value for i in at.info), c.key
+
+
+def test_quiz_round(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, db_path, save_settings
+    from edgelab.data.store import Store
+
+    save_settings(Settings(watchlist=["EURUSD"]))
+    at = AppTest.from_string("from edgelab.ui import page_learn\npage_learn.render()", default_timeout=120)
+    at.run()
+    for kind in ("setup", "next", "stop", "concept"):
+        at.selectbox(key="qz_kind").set_value(kind).run()
+        next(b for b in at.button if b.label == "New question").click().run()
+        assert not at.exception, (kind, [e.value for e in at.exception])
+        radio = next(r for r in at.radio if r.label == "Your answer")
+        radio.set_value(0).run()
+        next(b for b in at.button if b.label == "Check answer").click().run()
+        assert not at.exception, (kind, [e.value for e in at.exception])
+    assert len(Store(db_path()).load_quiz_attempts()) == 4

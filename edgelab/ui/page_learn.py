@@ -32,11 +32,14 @@ def render():
     st.caption("You're dropped at a moment in history with the future hidden. Step forward bar by bar if you like, "
                "then decide: long, short or no trade - with a stop and a target. Reveal what happened and get "
                "scored on your read, your result and your risk discipline.")
-    tab_play, tab_prog = st.tabs(["🎮 Replay", "📊 My progress"])
+    tab_play, tab_quiz, tab_prog = st.tabs(["🎮 Replay", "🧠 Quiz", "📊 My progress"])
     with tab_play:
         _play()
+    with tab_quiz:
+        _quiz()
     with tab_prog:
         _progress()
+        _quiz_progress()
 
 
 # ------------------------------------------------------------------------------------------------ replay
@@ -289,3 +292,103 @@ def _progress():
     if st.button("Reset my progress"):
         get_store().clear_attempts()
         st.rerun()
+
+
+# ------------------------------------------------------------------------------------------------ quiz
+def _quiz():
+    from edgelab.learning.quiz import QTYPES, make_question
+
+    s = get_settings()
+    st.caption("Questions built from real moments in your data (and from the glossary). The chart stops at the "
+               "moment in question - the future is only revealed after you answer.")
+    c1, c2, c3, c4 = st.columns([2, 1, 2, 1])
+    sym = c1.selectbox("Pair", s.watchlist or FOREX_SYMBOLS, key="qz_sym")
+    tf = c2.selectbox("Timeframe", ["5m", "15m"], index=1, key="qz_tf")
+    kind = c3.selectbox("Question type", ["mixed"] + list(QTYPES), key="qz_kind",
+                        format_func=lambda k: "Mixed" if k == "mixed" else QTYPES[k])
+    topic = st.session_state.pop("qz_topic", None)
+    if c4.button("New question", type="primary", width="stretch") or topic:
+        rng = np.random.default_rng()
+        qtype = kind if kind != "mixed" else str(rng.choice(list(QTYPES), p=[0.3, 0.3, 0.2, 0.2]))
+        if topic in PATTERNS and qtype == "concept":
+            qtype = "setup"
+        a, _ = _analysis(sym, tf) if qtype != "concept" else (None, None)
+        if qtype != "concept" and a is None:
+            st.error(f"No data for {sym}.")
+            return
+        q = None
+        for _ in range(5):
+            q = make_question(qtype, a, get_instrument(sym), rng, horizon=HORIZON[tf], history=HISTORY[tf],
+                              settings=s, topic=topic)
+            if q:
+                break
+        if q is None:
+            st.warning("Couldn't build that question from this data - try another type or pair.")
+            return
+        st.session_state["qz"] = {"q": q, "sym": sym, "tf": tf, "done": False, "chosen": None}
+    qz = st.session_state.get("qz")
+    if not qz:
+        st.info("Press **New question**.")
+        return
+    q = qz["q"]
+    if q.signal_i is not None:
+        a, _ = _analysis(qz["sym"], qz["tf"])
+        df = a.ctx.df
+        inst = get_instrument(qz["sym"])
+        i = q.signal_i
+        end = i + HORIZON[qz["tf"]] if (qz["done"] and q.qtype in ("next", "stop")) else i
+        view = df.iloc[max(0, i - HISTORY[qz["tf"]]):end + 1]
+        fig = build_chart(view, ChartOptions(overlays={"sessions", "vwap", "ema_fast", "ema_slow", "or"},
+                                             panels=["volume"], decimals=inst.decimals, height=520), tz=s.display_tz)
+        xl = list(view.index.tz_convert(s.display_tz).strftime("%a %d %b %H:%M"))
+        k = i - int(df.index.get_indexer([view.index[0]])[0])
+        fig.add_vline(x=xl[k], line=dict(color="#6a1b9a", width=2), row="all", col=1)
+        if end > i:
+            fig.add_vrect(x0=xl[k], x1=xl[-1], fillcolor="#fff8e1", opacity=0.5, line_width=0, layer="below", row=1, col=1)
+        if q.qtype == "stop" and "entry" in q.extra:
+            fig.add_hline(y=q.extra["entry"], line=dict(color="#0d47a1", width=1.5), row=1, col=1,
+                          annotation_text="planned entry", annotation_font_color="#0d47a1")
+        st.plotly_chart(fig, config={"displaylogo": False}, key=f"qz_chart_{qz['done']}")
+        st.caption("The purple line marks the moment the question is about." +
+                   (" Shaded = what happened next." if end > i else ""))
+    st.markdown(f"**{q.prompt}**")
+    choice = st.radio("Your answer", list(range(len(q.options))), index=None, format_func=lambda k: q.options[k],
+                      key=f"qz_choice_{id(q)}", disabled=qz["done"], label_visibility="collapsed")
+    if not qz["done"]:
+        if st.button("Check answer", disabled=choice is None):
+            qz["done"], qz["chosen"] = True, choice
+            get_store().add_quiz_attempt(q.qtype, q.topic, choice == q.answer, q.options[choice], q.options[q.answer],
+                                         qz["sym"], qz["tf"])
+            st.rerun()
+    else:
+        if qz["chosen"] == q.answer:
+            st.success("✅ Correct.")
+        else:
+            st.error(f"❌ Not quite. The answer: **{q.options[q.answer]}**")
+        st.markdown(q.explanation)
+
+
+def _quiz_progress():
+    from edgelab.learning.quiz import QTYPES, weakest_topics
+
+    t = get_store().load_quiz_attempts()
+    st.subheader("Quiz results")
+    if t.empty:
+        st.caption("No quiz answers yet.")
+        return
+    c = st.columns(len(QTYPES) + 1)
+    c[0].metric("Answered", len(t), f"{t['correct'].mean() * 100:.0f}% correct", delta_color="off")
+    for k, (qt, name) in enumerate(QTYPES.items(), start=1):
+        sub = t[t["qtype"] == qt]
+        c[k].metric(name, f"{sub['correct'].mean() * 100:.0f}%" if len(sub) else "-", f"{len(sub)} answered",
+                    delta_color="off")
+    weak = weakest_topics(t)
+    if weak:
+        st.markdown("**Your weakest topics** - revisit these in the Concepts library or drill them:")
+        for topic, acc, n in weak:
+            name = PATTERNS[topic].name if topic in PATTERNS else ("Stop placement" if topic == "stops" else topic)
+            c1, c2 = st.columns([4, 1])
+            c1.markdown(f"- **{name}**: {acc * 100:.0f}% correct over {n} questions")
+            if topic in PATTERNS and c2.button("Drill it", key=f"drill_{topic}"):
+                st.session_state["qz_topic"] = topic
+                st.rerun()
