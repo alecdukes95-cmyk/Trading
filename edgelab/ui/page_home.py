@@ -10,10 +10,12 @@ STAGES = [
     ("2. Pattern detection + live alerts", "ready", "14 forex pairs. Breakouts, failed breakouts, flags, engulfing/pin "
      "bars, VWAP reclaims/rejections, opening-range breaks, gap-and-go, volume climaxes, HH/HL structure. Click any "
      "pattern to see the order idea, why it fired and its history on your data; the live scanner notifies you."),
-    ("3. Learning mode", "next", "Bar-by-bar replay with scoring, quizzes from real charts, concept library, progress."),
+    ("3. Learning mode", "next", "In progress: the bar-by-bar replay trainer with scoring and progress tracking is "
+     "ready (Learn page). Next: quizzes from real charts and a concept library linked to chart examples."),
     ("4. Edge builder + backtester", "planned", "No-code rules, realistic costs, out-of-sample + walk-forward, "
      "overfitting warnings."),
-    ("5. Monte Carlo engine", "planned", "Bootstrap, shuffling, parameter perturbation, risk of ruin, Kelly sizing."),
+    ("5. Monte Carlo engine", "ready", "Backtests & Monte Carlo page plus a Monte Carlo button on every alert and "
+     "pattern: bootstrap, shuffle, parameter uncertainty, risk of ruin, drawdowns, Kelly sizing, edge test."),
     ("6. Trade journal", "planned", "Log trades with notes/screenshots, tag setups, feed results back in."),
 ]
 

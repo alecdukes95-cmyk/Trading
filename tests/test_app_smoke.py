@@ -4,7 +4,7 @@ import pytest
 from edgelab.data.sample import generate_bars
 from edgelab.data.store import Store
 
-PAGES = ["page_home", "page_signals", "page_chart", "page_backtest", "page_position", "page_data", "page_glossary", "page_settings"]
+PAGES = ["page_home", "page_signals", "page_chart", "page_backtest", "page_learn", "page_position", "page_data", "page_glossary", "page_settings"]
 
 
 @pytest.fixture
@@ -126,3 +126,26 @@ def test_monte_carlo_button_on_a_chart_pattern(small_home):
     btns[0].click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("Chance of being up" in m.label for m in at.metric)
+
+
+def test_replay_trainer_full_round(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, save_settings
+
+    save_settings(Settings(watchlist=["EURUSD"]))
+    at = AppTest.from_string("from edgelab.ui import page_learn\npage_learn.render()", default_timeout=120)
+    at.run()
+    next(b for b in at.button if b.label == "New replay").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    next(b for b in at.button if b.label.startswith("Next bar")).click().run()
+    next(b for b in at.button if "Hint" in b.label).click().run()
+    action = next(r for r in at.radio if r.label == "Action")
+    action.set_value("long")
+    next(b for b in at.button if "Lock in decision" in b.label).click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any(m.label == "Your read" for m in at.metric)
+    from edgelab.config import db_path
+    from edgelab.data.store import Store
+
+    assert len(Store(db_path()).load_attempts()) == 1

@@ -23,6 +23,18 @@ On the very first launch, EdgeLab creates its sample data, which takes 10–20 s
 
 **Mac or Linux:** run `./run.sh` in a terminal instead.
 
+## Learn: replay trainer (Stage 3, in progress)
+
+1. **Start a replay.** Pick a pair and timeframe and press **New replay**. You're dropped at a moment in history with the future hidden. Choose *Random moment* (often the right answer is "no trade") or *Pattern drill* (a bar where one of the app's patterns just completed).
+2. **Look and decide.** Step forward with **Next bar** or **+6 bars**, or ask for a **💡 Hint** (what the pattern rules see). Then decide long, short or no trade, with a stop and a target.
+3. **Get scored.** The app reveals what happened and scores three things out of 100:
+   - your **read**: did the market move 1.5 ATR in your direction first, or go nowhere?
+   - the **trade result** in R after costs;
+   - your **risk discipline**: stop distance against normal noise, reward:risk, and whether 1 mini lot fits your 0.65% rule.
+4. **Track your progress.** **My progress** shows accuracy, average R, a table of your calls against what actually happened, the setups you most often misread, and tips (for example, if you keep trading when the market is going nowhere).
+
+Coming next in Stage 3: quizzes from real charts, and a concept library linked to chart examples.
+
 ## Backtests & Monte Carlo
 
 **Backtests & Monte Carlo** replays every past occurrence of every pattern across your pairs. It uses your OANDA data where you've downloaded it, otherwise the clearly flagged synthetic samples.
@@ -184,7 +196,7 @@ Copy `.env.example` to `.env` and paste keys there. `.env` is ignored by git, so
 
 Double-click `run_tests.bat`, or from a terminal: `.venv\Scripts\python -m pytest`.
 
-There are 120 automated checks. They cover:
+There are 128 automated checks. They cover:
 
 - **Indicators:** hand-computed values, plus a test proving no indicator uses future bars.
 - **Sessions and DST:** trading-day boundaries and daylight-saving handling.
@@ -199,6 +211,7 @@ There are 120 automated checks. They cover:
 - **Trade plans and outcomes:** the stop-entry and minimum-stop rules, wins, losses, stop-first ties, gaps and costs.
 - **Statistics:** the plain-English verdicts.
 - **Monte Carlo maths:** exact equity paths, drawdown, recovery and streaks, shuffle conserving the total, parameter uncertainty widening the range, Kelly against its formula, and edge-test verdicts including the multiple-testing correction.
+- **Replay scoring:** how the market's next move is labelled (up, down or going nowhere), wins and losses, wrong-side stops, discipline flags, and a full trainer round in the app.
 - **Scanner and alerts:** the live scanner (only new candles alert, no duplicates), the simulation, notifications, and the alert page.
 - **Every page of the app:** each one renders without errors.
 
@@ -230,7 +243,7 @@ userdata/              YOUR data: edgelab.db (SQLite) and settings.json - create
 
 1. ✅ Data intake and chart reader
 2. ✅ Pattern detection, the "explain this" panel and live alerts
-3. 🔜 Learning mode: bar-by-bar replay with scoring, quizzes from real charts, a concept library, and progress tracking.
+3. 🔜 Learning mode (replay trainer done; quizzes and concept library next): bar-by-bar replay with scoring, quizzes from real charts, a concept library, and progress tracking.
 4. Edge builder and backtester: no-code rules and realistic costs, with in-sample/out-of-sample splits, walk-forward testing and overfitting warnings.
 5. ✅ Monte Carlo engine (built early, on request): bootstrap resampling, trade shuffling, parameter perturbation, risk of ruin and fractional Kelly.
 6. Trade journal with notes and screenshots, feeding results back into the stats.

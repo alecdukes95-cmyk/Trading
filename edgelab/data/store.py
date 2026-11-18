@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS alerts (
     seen INTEGER DEFAULT 0,
     UNIQUE (mode, symbol, timeframe, pattern, direction, bar_ts)
 );
+CREATE TABLE IF NOT EXISTS replay_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT,
+    symbol TEXT, timeframe TEXT, bar_ts INTEGER, mode TEXT,
+    decision TEXT, entry REAL, stop REAL, target REAL,
+    hindsight TEXT, read_correct INTEGER, result TEXT, r REAL, rr REAL, stop_atr REAL,
+    score INTEGER, pattern TEXT, synthetic INTEGER
+);
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -191,6 +199,28 @@ class Store:
             df["entry_time"] = from_epoch_seconds(df["entry_ts"])
             df["exit_time"] = from_epoch_seconds(df["exit_ts"])
         return df
+
+    # --------------------------------------------------------- learning progress
+    def add_attempt(self, row: dict) -> int:
+        cols = ["symbol", "timeframe", "bar_ts", "mode", "decision", "entry", "stop", "target", "hindsight",
+                "read_correct", "result", "r", "rr", "stop_atr", "score", "pattern", "synthetic"]
+        vals = [row.get(c) for c in cols]
+        vals[2] = int(to_epoch_seconds([row["bar_ts"]])[0])
+        with self._conn() as c:
+            cur = c.execute(f"INSERT INTO replay_attempts (created_at, {', '.join(cols)}) VALUES (?{', ?' * len(cols)})",
+                            [_now()] + vals)
+            return int(cur.lastrowid)
+
+    def load_attempts(self) -> pd.DataFrame:
+        with self._conn() as c:
+            df = pd.read_sql_query("SELECT * FROM replay_attempts ORDER BY id", c)
+        if not df.empty:
+            df["bar_time"] = from_epoch_seconds(df["bar_ts"])
+        return df
+
+    def clear_attempts(self) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM replay_attempts")
 
     # --------------------------------------------------------- alerts
     def add_alert(self, mode: str, symbol: str, timeframe: str, pattern: str, direction: str, bar_ts: pd.Timestamp,
