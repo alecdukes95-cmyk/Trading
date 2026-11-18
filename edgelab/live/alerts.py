@@ -123,7 +123,8 @@ def headline(pl: dict) -> str:
 def desktop_text(pl: dict) -> str:
     p, d = pl["plan"], pl["decimals"]
     pos = pl.get("position") or {}
-    risk = (f" Risk {pos['currency']} {pos['risk']:.2f} ({pos['risk_pct']:.2f}%)." if pos.get("risk") else "")
+    risk = (f" Risk {pos['currency']} {pos['risk']:.2f}" + (f" ({pos['risk_pct']:.2f}%)" if pos.get("risk_pct") is not None
+                                                             else "") + "." if pos.get("risk") else "")
     why = pl["reasons"][0] if pl["reasons"] else ""
     sim = "[SIMULATION] " if pl.get("mode") == "simulation" else ""
     return (f"{sim}{p['order_type']} {fmt_price(p['entry'], d)} | SL {fmt_price(p['stop'], d)} | "

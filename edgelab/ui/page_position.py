@@ -5,7 +5,7 @@ from edgelab.instruments import INSTRUMENTS, get_instrument
 from edgelab.learning.glossary import help_text
 from edgelab.risk import analyse_position, units_for_risk, value_per_price_unit
 from edgelab.ui.page_glossary import term_expanders
-from edgelab.ui.page_settings import money
+from edgelab.ui.page_settings import money, num
 from edgelab.ui.state import balance_summary, get_converter, get_settings
 
 
@@ -85,13 +85,17 @@ def render():
 
     for w in r.warnings:
         st.warning(w)
-    if not r.warnings:
+    if stop_d <= 0:
+        st.error("No stop-loss set. Without one there's no defined risk, so EdgeLab can't size the trade or check "
+                 "your risk rule. Decide where the idea is proven wrong and put the stop there.")
+    elif not r.warnings:
         st.success("This trade fits your risk rule and margin comfortably.")
 
     st.subheader("Risk and reward")
     m = st.columns(4)
-    m[0].metric("Loss if stopped (incl. costs)", money(r.total_risk, ccy))
-    m[0].caption(f"{r.risk_pct:.2f}% of your balance")
+    m[0].metric("Loss if stopped (incl. costs)", money(r.total_risk, ccy) if r.total_risk is not None else "no stop!")
+    m[0].caption(f"{num(r.risk_pct, '.2f', '%')} of your balance" if r.total_risk is not None else
+                 "Without a stop-loss the possible loss is open-ended.")
     m[1].metric("Profit at target (after costs)", money(r.reward, ccy) if r.reward is not None else "-")
     m[2].metric("Reward : risk", f"{r.rr:.2f} : 1" if r.rr is not None else "-")
     m[3].metric("Round-trip costs", money(r.costs.total, ccy))
@@ -122,7 +126,7 @@ def render():
     st.markdown(
         f"- With **{units:,.0f} units** you control **{money(r.notional, ccy)}** of {inst.base} using "
         f"**{money(r.margin_required, ccy)}** of margin: leverage of {r.notional / r.margin_required:.0f}:1 on the "
-        f"position, and {r.notional / balance:.2f}x your whole balance.\n"
+        f"position, and {num(r.notional / balance if balance else None, '.2f', 'x')} your whole balance.\n"
         f"- The broker starts closing positions when equity falls to {b.margin_closeout_pct:.0f}% of the margin in "
         f"use: here after a loss of **{money(r.closeout_loss, ccy)}**"
         + (f", i.e. a move of about **{dist:,.0f} {unit_word.split(' ')[0]}** against you." if dist else ".")

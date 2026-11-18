@@ -14,8 +14,18 @@ DISPLAY_TZ = ["Europe/London", "UTC", "America/New_York", "Europe/Berlin", "Asia
 CURRENCY_SYMBOL = {"GBP": "£", "USD": "$", "EUR": "€"}
 
 
-def money(x: float, ccy: str) -> str:
+def money(x, ccy: str) -> str:
+    """'£1,234.56' - or '-' when the value is unknown (e.g. no stop-loss, no exchange rate)."""
+    if x is None or (isinstance(x, float) and x != x):
+        return "-"
     return f"{CURRENCY_SYMBOL.get(ccy, ccy + ' ')}{x:,.2f}"
+
+
+def num(x, spec: str = ".2f", suffix: str = "", default: str = "-") -> str:
+    """Format a number that may be missing: num(None, '.2f', '%') -> '-'."""
+    if x is None or (isinstance(x, float) and x != x):
+        return default
+    return f"{x:{spec}}{suffix}"
 
 
 def render():

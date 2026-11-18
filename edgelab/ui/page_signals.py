@@ -5,6 +5,7 @@ from edgelab.instruments import get_instrument
 from edgelab.live.alerts import DISCLAIMER, headline, payload_frame_and_signal
 from edgelab.live.notify import beep_wav
 from edgelab.ui.explain import render_signal
+from edgelab.ui.page_settings import num
 from edgelab.ui.state import get_scanner, get_settings, get_store, load_bars
 
 
@@ -100,8 +101,8 @@ def _alert_card(a: dict, s, expanded: bool):
     tag = "🧪 SIMULATION" if pl.get("mode") == "simulation" else "🟢 LIVE"
     when = pd.Timestamp(pl["bar_ts"], unit="s", tz="UTC").tz_convert(s.display_tz)
     pos = pl.get("position") or {}
-    risk = (f" | risk £{pos['risk']:.2f} ({pos['risk_pct']:.2f}%)" if pos.get("risk") and pos.get("currency") == "GBP"
-            else "")
+    risk = (f" | risk £{pos['risk']:.2f} ({num(pos.get('risk_pct'), '.2f', '%')})"
+            if pos.get("risk") and pos.get("currency") == "GBP" else "")
     new = "🔔 " if not a["seen"] else ""
     with st.expander(f"{new}{tag} | {when:%a %d %b %H:%M} | {pl['symbol']} {pl['timeframe']} | {pl['title']} -> "
                      f"{p['order_type']} {p['entry']:.{d}f}, SL {p['stop']:.{d}f}, TP {p['target']:.{d}f}{risk}",

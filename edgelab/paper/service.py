@@ -95,6 +95,8 @@ def describe(e: dict, ccy: str = "GBP") -> str:
         return f"{sym}: your {e['side']} order filled at {e['price']}."
     if e["type"] == "expired":
         return f"{sym}: your pending order expired unfilled."
-    pnl = e.get("pnl")
-    return (f"{sym}: {e['type']} - closed at {e.get('price')}, {e.get('pips', 0):+.1f} pips, "
-            f"{cur}{pnl:+,.2f}" + (f" ({e['r']:+.2f} R)" if e.get("r") is not None else "") + ".")
+    pnl, pips = e.get("pnl"), e.get("pips")
+    return (f"{sym}: {e['type']} - closed at {e.get('price')}"
+            + (f", {pips:+.1f} pips" if pips is not None else "")
+            + (f", {cur}{pnl:+,.2f}" if pnl is not None else "")
+            + (f" ({e['r']:+.2f} R)" if e.get("r") is not None else "") + ".")

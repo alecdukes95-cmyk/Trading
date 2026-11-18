@@ -182,3 +182,51 @@ def test_paper_trading_page_replay_round_trip(small_home):
 
     t = Store(db_path()).load_trades()
     assert (t["source"] == "paper").sum() == 1
+
+
+@pytest.mark.parametrize("field,value", [("Stop-loss distance", 0.0), ("Target distance", 0.0),
+                                         ("Position size", 0.0)])
+def test_position_page_survives_blank_inputs(small_home, field, value):
+    """Regression: a stop-loss of 0 crashed with 'unsupported format string passed to NoneType.__format__'."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_string("from edgelab.ui import page_position\npage_position.render()", default_timeout=60)
+    at.run()
+    for sym in ("EURUSD", "USDJPY"):
+        at.selectbox[0].set_value(sym).run()
+        box = next(n for n in at.number_input if n.label.startswith(field))
+        box.set_value(value).run()
+        assert not at.exception, (sym, field, [e.value for e in at.exception])
+
+
+def test_paper_ticket_without_stop_or_target(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, save_settings
+    from edgelab.ui.state import get_paper
+
+    save_settings(Settings(watchlist=["EURUSD"], notify_desktop=False))
+    at = AppTest.from_string("from edgelab.ui import page_paper\npage_paper.render()", default_timeout=120)
+    at.run()
+    next(b for b in at.button if "Replay practice" in b.label).click().run()
+    get_paper().tick()
+    at.run()
+    for label in ("Stop-loss (pips", "Take-profit (pips"):
+        next(n for n in at.number_input if n.label.startswith(label)).set_value(0.0).run()
+        assert not at.exception, [e.value for e in at.exception]
+    next(b for b in at.button if b.label.startswith("Place paper")).click().run()   # 1 mini lot, no stop: allowed
+    assert not at.exception, [e.value for e in at.exception]
+    next(r for r in at.radio if r.label == "Size").set_value("risk").run()
+    assert not at.exception, [e.value for e in at.exception]
+    # risk-based sizing can't size a trade without a stop: the button is disabled rather than crashing
+    assert next(b for b in at.button if b.label.startswith("Place paper")).disabled
+    get_paper().stop()
+
+
+def test_formatters_handle_missing_values():
+    from edgelab.paper.service import describe
+    from edgelab.ui.page_settings import money, num
+
+    assert money(None, "GBP") == "-" and money(float("nan"), "GBP") == "-" and money(12.5, "GBP") == "£12.50"
+    assert num(None, ".2f", "%") == "-" and num(1.234, ".1f", "%") == "1.2%"
+    assert "closed at" in describe({"type": "stop-loss", "symbol": "EURUSD", "price": 1.1, "pnl": None, "pips": None})

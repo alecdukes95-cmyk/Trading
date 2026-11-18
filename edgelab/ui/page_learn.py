@@ -8,6 +8,7 @@ from edgelab.learning.replay import MOVE_ATR, Decision, evaluate_decision, pick_
 from edgelab.patterns.base import PATTERNS
 from edgelab.timeutil import timeframe_minutes
 from edgelab.ui.charts import ChartOptions, build_chart
+from edgelab.ui.page_settings import num
 from edgelab.ui.state import balance_summary, get_converter, get_settings, get_store, pattern_analysis
 
 HORIZON = {"5m": 36, "15m": 24}
@@ -121,7 +122,9 @@ def _risk_checker(inst, s):
         except ValueError:
             return True, "Risk check unavailable (no exchange rate)."
         ok = r.total_risk <= r.risk_limit * 1.0001
-        return ok, (f"1 mini lot risks £{r.total_risk:.2f} = {r.risk_pct:.2f}% of your balance - "
+        if r.total_risk is None:
+            return True, "Risk check unavailable."
+        return ok, (f"1 mini lot risks £{r.total_risk:.2f} = {num(r.risk_pct, '.2f', '%')} of your balance - "
                     + ("within" if ok else "BREAKS") + f" your {s.risk_pct:.2f}% rule.")
     return check
 

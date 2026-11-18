@@ -9,7 +9,7 @@ from edgelab.paper.service import describe
 from edgelab.patterns.base import PATTERNS, TRADEABLE
 from edgelab.risk import units_for_risk, value_per_price_unit
 from edgelab.ui.charts import ChartOptions, build_chart
-from edgelab.ui.page_settings import money
+from edgelab.ui.page_settings import money, num
 from edgelab.ui.state import balance_summary, get_paper, get_settings, get_store
 
 SETUPS = [PATTERNS[k].name for k in TRADEABLE if k != "bear_flag"] + ["My own idea", "Alert from the scanner"]
@@ -245,7 +245,8 @@ def _ticket(svc, s, sym):
     marg = margin_required(inst, units, ref, env.converter(), env.ccy, env.broker) if units else None
     st.markdown(f"**{units:,} units** ({units / 100_000:.2f} lots) | entry ~{inst.fmt_price(ref)} | "
                 f"stop {inst.fmt_price(sl) if sl else '-'} | target {inst.fmt_price(tp) if tp else '-'}  \n"
-                + (f"Loss at stop **{money(risk_ccy, env.ccy)}** ({risk_pct:.2f}% of paper balance) | " if risk_ccy else "")
+                + (f"Loss at stop **{money(risk_ccy, env.ccy)}** ({num(risk_pct, '.2f', '%')} of paper balance) | "
+                   if risk_ccy else "**No stop-loss set** | ")
                 + (f"margin {money(marg, env.ccy)}" if marg else ""))
     checks = pre_trade_checks(has_sl=sl is not None, risk_pct=risk_pct, rule_pct=s.risk_pct, rr=rr, emotion=emo,
                               ticked=ticked, closed=svc.book.positions("closed"), open_count=len(svc.book.positions()),

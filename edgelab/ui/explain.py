@@ -8,6 +8,7 @@ import streamlit as st
 from edgelab.learning.glossary import GLOSSARY
 from edgelab.patterns.base import PATTERNS
 from edgelab.ui.charts import signal_figure
+from edgelab.ui.page_settings import num
 
 ARROW = {"long": "🟢 ▲", "short": "🔴 ▼", "neutral": "⚪"}
 
@@ -31,12 +32,13 @@ def order_box(plan, decimals: int, timeframe: str | None, expiry_minutes: int | 
     if pos and pos.get("units"):
         ccy = "£" if pos.get("currency") == "GBP" else pos.get("currency", "") + " "
         fits = "✅ fits" if pos.get("fits_rule") else "❌ breaks"
+        g = lambda k, spec=",.2f": num(pos.get(k), spec)  # noqa: E731
         st.markdown(
-            f"**Size:** {pos['units']:,} units ({pos['lots']:.2f} lots)  \n"
-            f"**Loss if stopped:** {ccy}{pos['risk']:,.2f} = {pos['risk_pct']:.2f}% of balance (incl. "
-            f"{ccy}{pos['costs']:.2f} costs) → {fits} your {pos.get('rule_pct', 0):.2f}% rule  \n"
-            f"**Profit at target:** {ccy}{pos['reward']:,.2f} after costs  \n"
-            f"**Margin needed:** {ccy}{pos['margin']:,.2f}")
+            f"**Size:** {pos['units']:,} units ({num(pos.get('lots'), '.2f')} lots)  \n"
+            f"**Loss if stopped:** {ccy}{g('risk')} = {num(pos.get('risk_pct'), '.2f', '%')} of balance (incl. "
+            f"{ccy}{g('costs', '.2f')} costs) → {fits} your {num(pos.get('rule_pct'), '.2f', '%')} rule  \n"
+            f"**Profit at target:** {ccy}{g('reward')} after costs  \n"
+            f"**Margin needed:** {ccy}{g('margin')}")
         if not pos.get("fits_rule") and pos.get("units_for_limit"):
             st.caption(f"To keep within your risk rule, use at most {pos['units_for_limit']:,} units for this stop.")
 
