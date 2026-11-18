@@ -197,8 +197,10 @@ def edge_test(r_hist, n_boot: int = 10_000, seed: int = 11, n_tests: int = 1) ->
     else:
         verdict = "NOT distinguishable from zero after costs."
     detail = (f"Average {r.mean():+.3f} R per trade over {n} trades; 95% bootstrap range {lo:+.3f} to {hi:+.3f} R. "
-              "If the true edge were zero, a result at least this good would appear by luck "
-              + ("less than 0.1% of the time." if p_le0 < 0.001 else f"about {p_le0 * 100:.1f}% of the time."))
+              + ("The average is at or below zero, so there is no evidence of an edge at all."
+                 if r.mean() <= 0 else
+                 "If the true edge were zero, a result at least this good would appear by luck "
+                 + ("less than 0.1% of the time." if p_le0 < 0.001 else f"about {p_le0 * 100:.1f}% of the time.")))
     if n_tests > 1:
         detail += (f" You are comparing {n_tests} pattern/direction combinations, so the bar is raised to "
                    f"{adj * 100:.2f}% - with that many tries, about {n_tests * 0.05:.1f} would look 'significant' "

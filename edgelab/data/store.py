@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, qtype TEXT, topic TEXT, symbol TEXT, timeframe TEXT,
     correct INTEGER, chosen TEXT, answer TEXT
 );
+CREATE TABLE IF NOT EXISTS strategies (
+    name TEXT PRIMARY KEY, json TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS strategy_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, data_key TEXT, strategy_hash TEXT, strategy_name TEXT,
+    kind TEXT, trades INTEGER, expectancy REAL, t_stat REAL, oos_expectancy REAL
+);
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -235,6 +242,41 @@ class Store:
     def clear_attempts(self) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM replay_attempts")
+
+    # --------------------------------------------------------- strategies (edge builder)
+    def save_strategy(self, name: str, js: str) -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO strategies VALUES (?,?,?,?) ON CONFLICT(name) DO UPDATE SET json = excluded.json, "
+                      "updated_at = excluded.updated_at", (name, js, _now(), _now()))
+
+    def list_strategies(self) -> dict:
+        with self._conn() as c:
+            return {n: j for n, j in c.execute("SELECT name, json FROM strategies ORDER BY name")}
+
+    def delete_strategy(self, name: str) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM strategies WHERE name = ?", (name,))
+
+    def log_run(self, data_key: str, shash: str, name: str, kind: str, trades: int, expectancy, t_stat,
+                oos_expectancy) -> None:
+        clean = lambda v: None if v is None or (isinstance(v, float) and v != v) else float(v)  # noqa: E731
+        with self._conn() as c:
+            c.execute("INSERT INTO strategy_runs (created_at, data_key, strategy_hash, strategy_name, kind, trades, "
+                      "expectancy, t_stat, oos_expectancy) VALUES (?,?,?,?,?,?,?,?,?)",
+                      (_now(), data_key, shash, name, kind, int(trades), clean(expectancy), clean(t_stat),
+                       clean(oos_expectancy)))
+
+    def runs(self, data_key: str | None = None) -> pd.DataFrame:
+        q, p = "SELECT * FROM strategy_runs", []
+        if data_key:
+            q += " WHERE data_key = ?"
+            p.append(data_key)
+        with self._conn() as c:
+            return pd.read_sql_query(q + " ORDER BY id", c, params=p)
+
+    def clear_runs(self) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM strategy_runs")
 
     # --------------------------------------------------------- alerts
     def add_alert(self, mode: str, symbol: str, timeframe: str, pattern: str, direction: str, bar_ts: pd.Timestamp,

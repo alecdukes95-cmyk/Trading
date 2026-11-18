@@ -286,3 +286,29 @@ def test_quiz_round(small_home):
         next(b for b in at.button if b.label == "Check answer").click().run()
         assert not at.exception, (kind, [e.value for e in at.exception])
     assert len(Store(db_path()).load_quiz_attempts()) == 4
+
+
+def test_edge_builder_page_full_flow(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, db_path, save_settings
+    from edgelab.data.store import Store
+
+    save_settings(Settings(watchlist=["EURUSD"]))
+    at = AppTest.from_string("from edgelab.ui import page_edge\npage_edge.render()", default_timeout=180)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    for preset in ("London ORB", "VWAP reclaim with trend", "20-bar breakout", "RSI reversal (fade)"):
+        next(b for b in at.button if b.label == preset).click().run()
+        next(b for b in at.button if "Run backtest" in b.label).click().run()
+        assert not at.exception, (preset, [e.value for e in at.exception])
+    assert any("Overfitting check" in m.value for m in at.markdown)
+    next(b for b in at.button if "Run Monte Carlo" in b.label).click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    next(b for b in at.button if "Run walk-forward" in b.label).click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    next(b for b in at.button if "Run grid" in b.label).click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    next(b for b in at.button if "Save current rules" in b.label).click().run()
+    assert "RSI reversal (fade)" in Store(db_path()).list_strategies()
+    assert Store(db_path()).runs()["strategy_hash"].nunique() >= 4
