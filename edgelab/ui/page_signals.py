@@ -1,7 +1,6 @@
 import pandas as pd
 import streamlit as st
 
-from edgelab.config import api_key
 from edgelab.instruments import get_instrument
 from edgelab.live.alerts import DISCLAIMER, headline, payload_frame_and_signal
 from edgelab.live.notify import beep_wav
@@ -17,17 +16,19 @@ def render():
     st.caption("Watches your forex pairs and alerts you when a pattern completes, with an order idea and an annotated "
                f"chart showing why. {DISCLAIMER}")
 
-    has_key = bool(api_key("OANDA_API_KEY"))
+    from edgelab.data.providers import live_source_ready
+
+    has_key, live_desc = live_source_ready(s)
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
         c1.markdown(f"**Watching:** {', '.join(s.watchlist)}  \n**Timeframes:** {', '.join(s.scan_timeframes)}  \n"
                     f"**Alert quality:** {s.alert_quality} | only in window: {'yes' if s.notify_only_in_window else 'no'}")
         c1.caption("Change these under Settings -> Alerts.")
-        if c2.button("▶ Start live scanning (OANDA)", type="primary", disabled=not has_key, width="stretch"):
+        if c2.button(f"▶ Start live scanning ({'MT5' if s.live_source == 'mt5' else 'OANDA'})", type="primary",
+                     disabled=not has_key, width="stretch"):
             sc.start("live")
             st.rerun()
-        if not has_key:
-            c2.caption("Needs your OANDA token in .env (see Data -> Download forex).")
+        c2.caption(live_desc if not has_key else f"Live source: {live_desc} (change in Settings -> Alerts).")
         days = c3.number_input("Simulation: replay the last N days", 1, 60, 10)
         speed = c3.select_slider("Seconds per simulated step", [0.2, 0.5, 1.0, 2.0, 5.0], value=0.5,
                                  help="Nights and weekends are skipped instantly when alerts are limited to your "

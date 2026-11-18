@@ -93,6 +93,12 @@ def guess_symbol(filename: str | None) -> str:
     if not filename:
         return ""
     stem = Path(filename).stem.upper()
+    from edgelab.instruments import INSTRUMENTS
+
+    flat = re.sub(r"[^A-Z0-9]", "", stem)
+    known = [sym for sym in INSTRUMENTS if sym in flat]
+    if known:
+        return min(known, key=flat.index)
     m = re.search(r"(BTC|ETH|XBT|SOL|[A-Z]{3})[-_/]?(USDT|USDC|USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD)", stem)
     return (m.group(1) + m.group(2)) if m else re.split(r"[^A-Z0-9]", stem)[0]
 

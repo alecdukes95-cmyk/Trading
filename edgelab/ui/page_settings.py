@@ -192,6 +192,9 @@ def _alerts(s):
                      horizontal=True, format_func={"strict": "Strict - only signals with no warning flags",
                                                    "normal": "Normal - at most one warning flag",
                                                    "all": "All signals"}.get)
+        src = st.radio("Live candle source for the scanner", ["oanda", "mt5"], index=0 if s.live_source == "oanda" else 1,
+                       horizontal=True, format_func={"oanda": "OANDA (free practice-account token)",
+                                                     "mt5": "MetaTrader 5 terminal on this PC (free demo account)"}.get)
         c1, c2, c3 = st.columns(3)
         only_win = c1.checkbox("Only during my trading window", value=s.notify_only_in_window)
         desk = c2.checkbox("Desktop notifications (Windows pop-up)", value=s.notify_desktop)
@@ -207,6 +210,7 @@ def _alerts(s):
             s.enabled_patterns = [] if set(pats) >= set(TRADEABLE) else pats
             s.alert_quality, s.notify_only_in_window, s.notify_desktop, s.notify_sound = q, only_win, desk, snd
             s.target_r, s.order_expiry_bars = float(tr), int(ex)
+            s.live_source = src
             update_settings(s)
             st.success("Saved. Restart the scanner for changes to take effect.")
     if st.button("Send a test desktop notification"):

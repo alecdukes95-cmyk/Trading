@@ -143,7 +143,19 @@ The `sample_data` folder also contains:
 - **Re-anchor whenever you like:** enter a new figure, or press **Sync balance now** to read your balance, equity and margin straight from OANDA.
 - **Your 0.65% risk amount always follows the current balance.**
 
-### OANDA (your broker)
+### Free market data: three options
+
+| Option | Cost / account | History | Live candles for the scanner | Notes |
+|---|---|---|---|---|
+| **Dukascopy** (Data → Free history) | Free, no account, no key | Years of 1-minute data | No (a day appears after it ends) | Swiss bank's bid prices; best for backtests, Monte Carlo and the trainer |
+| **MetaTrader 5** (Data → MetaTrader 5) | Free demo account at most UK brokers | Yes (demo 1-minute history may be limited) | Yes | Windows only; keep the MT5 terminal open; set the server timezone |
+| **OANDA v20** (Data → OANDA) | Free *practice* account token | Yes | Yes | Also syncs balance and margin. OANDA's separately sold *Exchange Rates API* is the expensive product, and EdgeLab doesn't use it |
+
+You can also import **CSV files** from any platform. That includes the free 1-minute files from HistData.com: choose the timezone "HistData.com files: New York standard time all year".
+
+Choose the scanner's live source under **Settings → Alerts**: OANDA or MetaTrader 5.
+
+### OANDA (optional)
 
 1. In OANDA, go to *My Account → Manage API Access* and generate a personal access token. Practice (demo) accounts have this too.
 2. Copy `.env.example` to `.env` in the EdgeLab folder and put the token after `OANDA_API_KEY=`. Restart EdgeLab.
@@ -196,7 +208,7 @@ Copy `.env.example` to `.env` and paste keys there. `.env` is ignored by git, so
 
 Double-click `run_tests.bat`, or from a terminal: `.venv\Scripts\python -m pytest`.
 
-There are 128 automated checks. They cover:
+There are 136 automated checks. They cover:
 
 - **Indicators:** hand-computed values, plus a test proving no indicator uses future bars.
 - **Sessions and DST:** trading-day boundaries and daylight-saving handling.
@@ -205,6 +217,7 @@ There are 128 automated checks. They cover:
 - **Storage:** saving and reloading datasets and trades.
 - **Money maths:** GBP currency conversions, pip values, margin at UK leverage, round-trip costs and position sizing, each hand-checked.
 - **Trade logs:** P&L and R calculations, converted to GBP.
+- **Free data sources:** decoding Dukascopy files (zero-based month URLs, either price order, weekend filler removed), the MetaTrader 5 client (server-time conversion, symbol suffixes) and the HistData format.
 - **Downloaders and narrative:** the OANDA client (candles, spreads, account summary and the read-only guarantee) and the Coinbase downloader, both offline against fake servers, plus the "what happened today" text.
 - **Running balance:** deposits, withdrawals, closed trades, OANDA sync, and no double counting.
 - **Patterns:** a test proving no detector uses future bars, plus hand-built examples of each main pattern.
@@ -221,7 +234,7 @@ There are 128 automated checks. They cover:
 app.py                 entry point (streamlit run app.py)
 edgelab/
   data/                CSV loading, timestamp parsing, validation, sessions, resampling, SQLite store,
-                       sample-data generator, trade-log import, providers/ (OANDA read-only, Coinbase)
+                       sample-data generator, trade-log import, providers/ (Dukascopy, MetaTrader 5, OANDA - all read-only - and Coinbase)
   indicators/          SMA/EMA/RMA, ATR, RSI, MACD, VWAP, opening range, prior-day levels, pivots, S/R
   patterns/            detectors, trade plans, outcome replay, pattern statistics
   backtest/            pattern backtests across pairs (trade tables, in/out-of-sample split)

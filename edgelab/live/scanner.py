@@ -138,12 +138,13 @@ class ScannerService:
         return self._stats_cache[key]
 
     def _run_live(self) -> None:
-        from edgelab.data.providers.oanda import OandaClient
+        from edgelab.data.providers import make_live_client
 
+        client = None
         while not self._stop.is_set():
             settings = load_settings()
             try:
-                client = OandaClient(api_key("OANDA_API_KEY") or "", settings.oanda_environment)
+                client = client or make_live_client(settings)
             except Exception as e:  # noqa: BLE001
                 self._error(str(e))
                 self.status.running = False
@@ -197,7 +198,8 @@ class ScannerService:
                 if settings.notify_desktop:
                     desktop_notify(headline(pl)[:60], desktop_text(pl))
         with self._lock:
-            self.status.sources[f"{sym} {tf}"] = f"OANDA {settings.oanda_environment}, history: {src}"
+            live = "MetaTrader 5" if settings.live_source == "mt5" else f"OANDA {settings.oanda_environment}"
+            self.status.sources[f"{sym} {tf}"] = f"{live}, history: {src}"
 
     # ------------------------------------------------------------------ simulation (replay)
     def _run_sim(self, sim_days: int) -> None:

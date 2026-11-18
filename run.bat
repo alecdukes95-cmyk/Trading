@@ -19,6 +19,8 @@ if errorlevel 1 (
     ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
     ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto failed
     copy /y requirements.txt .venv\installed-requirements.txt >nul
+    echo Optional: MetaTrader 5 link - skipped quietly if your Python version isn't supported yet.
+    ".venv\Scripts\python.exe" -m pip install MetaTrader5 >nul 2>nul
 )
 
 REM Skip Streamlit's one-time e-mail prompt

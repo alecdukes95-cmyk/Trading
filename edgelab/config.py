@@ -58,6 +58,9 @@ class Settings:
     oanda_account_id: str = ""                # optional; first account on the token if blank
     oanda_auto_sync: bool = False             # refresh balance from OANDA when the app starts
     oanda_last_summary: dict = field(default_factory=dict)
+    live_source: str = "oanda"                # where the live scanner gets candles: "oanda" or "mt5"
+    mt5_server_tz: str = "Europe/Athens"      # MetaTrader brokers usually run on GMT+2/+3 server time
+    mt5_symbol_suffix: str = ""               # e.g. ".a" if your broker names pairs EURUSD.a
     sessions: dict = field(default_factory=lambda: {k: v.to_dict() for k, v in DEFAULT_SESSIONS.items()})
     show_crypto: bool = False                 # crypto is parked for now
     # ---- pattern alerts / live scanner

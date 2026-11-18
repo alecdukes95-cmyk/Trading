@@ -77,8 +77,8 @@ def parse_timestamps(values: pd.Series, source_tz: str = "UTC", dayfirst: bool |
         idx = pd.DatetimeIndex(ts)
         return ParseResult(idx, notes, int(idx.isna().sum()), 0, True)
 
-    if dayfirst is None and s.astype(str).str.strip().str.match(r"^\d{4}[-./]\d{1,2}[-./]\d{1,2}").mean() > 0.9:
-        dayfirst = False  # year-first dates (2026-01-05, 2026.01.05) are always year-month-day
+    if dayfirst is None and s.astype(str).str.strip().str.match(r"^\d{4}([-./]\d{1,2}[-./]\d{1,2}|\d{4}\b)").mean() > 0.9:
+        dayfirst = False  # year-first dates (2026-01-05, 2026.01.05, 20260105) are always year-month-day
     if dayfirst is None:
         a = _parse_strings(s, dayfirst=False)
         b = _parse_strings(s, dayfirst=True)

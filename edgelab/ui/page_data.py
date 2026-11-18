@@ -5,7 +5,7 @@ from edgelab.data.loader import build_ohlcv, guess_mapping, guess_symbol, read_t
 from edgelab.data.providers import coinbase
 from edgelab.data.tradelog import ALL_FIELDS, REQUIRED, build_trades, guess_trade_mapping
 from edgelab.data.validate import clean_ohlcv, validate_ohlcv
-from edgelab.instruments import get_instrument, normalize_symbol
+from edgelab.instruments import FOREX_SYMBOLS as FOREX_PAIRS, get_instrument, normalize_symbol
 from edgelab.timeutil import bar_minutes, timeframe_label
 from edgelab.ui.state import datasets, get_converter, get_settings, get_store, severity_box
 
@@ -14,6 +14,7 @@ TZ_CHOICES = {
     "Europe/London": "UK time (London, with daylight saving)",
     "America/New_York": "US Eastern (New York, with daylight saving)",
     "Europe/Athens": "MetaTrader broker 'server time' GMT+2/+3 (follows EU daylight saving)",
+    "Etc/GMT+5": "HistData.com files: New York standard time all year (UTC-5, no daylight saving)",
     "Europe/Berlin": "Central Europe (CET/CEST)",
     "Asia/Tokyo": "Tokyo",
     "Australia/Sydney": "Sydney",
@@ -24,11 +25,19 @@ DATE_ORDER = {"Auto-detect": None, "Day first (31/01/2026)": True, "Month first 
 def render():
     st.title("Data")
     st.caption("Bring in price data and trade logs. Everything is stored locally on this computer.")
-    names = ["🏦 Download forex (OANDA)", "📄 Import price CSV", "📒 Import trade log", "🗂️ My datasets"]
+    names = ["🆓 Free history (Dukascopy)", "🖥️ MetaTrader 5 (free demo)", "🏦 OANDA (free practice account)",
+             "📄 Import price CSV", "📒 Import trade log", "🗂️ My datasets"]
     if get_settings().show_crypto:
-        names.insert(2, "⬇️ Download crypto")
+        names.insert(4, "⬇️ Download crypto")
+    st.info("**All three download options are free.** Dukascopy needs nothing at all (history only). MetaTrader 5 "
+            "and OANDA need a free demo/practice account and also give live candles for the scanner. You can also "
+            "import CSV files from any platform, including the free HistData.com downloads.")
     tabs = dict(zip(names, st.tabs(names)))
-    with tabs["🏦 Download forex (OANDA)"]:
+    with tabs["🆓 Free history (Dukascopy)"]:
+        _dukascopy_download()
+    with tabs["🖥️ MetaTrader 5 (free demo)"]:
+        _mt5_download()
+    with tabs["🏦 OANDA (free practice account)"]:
         _oanda_download()
     with tabs["📄 Import price CSV"]:
         _csv_wizard()
@@ -131,9 +140,10 @@ def _oanda_download():
 
     s = get_settings()
     st.markdown(
-        "Download forex candles straight from **your OANDA account** (practice or live). These are the same prices "
-        "your OANDA charts show, so the analysis matches what you trade. Read-only: EdgeLab only sends GET requests "
-        "and cannot place, change or cancel orders.")
+        "Download forex candles straight from **your OANDA account**. The v20 API EdgeLab uses is **free** with a "
+        "free *practice* (demo) account - no deposit needed. (OANDA's separately sold 'Exchange Rates API' is the "
+        "expensive product; EdgeLab doesn't use it.) Read-only: EdgeLab only sends GET requests and cannot place, "
+        "change or cancel orders.")
     if not api_key("OANDA_API_KEY"):
         st.info(
             "**One-time setup:**\n"
@@ -245,6 +255,106 @@ def _oanda_many(symbols, tf, days, s):
     st.cache_data.clear()
     if done:
         st.success("Saved: " + "; ".join(done) + ". Charts and the scanner now use this real data instead of the samples.")
+
+
+# --------------------------------------------------------------------------- Dukascopy (free, no account)
+def _save_downloads(results, source_label, s):
+    saved = []
+    for sym, tf, df in results:
+        if df is None or df.empty:
+            continue
+        cleaned, _ = clean_ohlcv(df[["open", "high", "low", "close", "volume"]])
+        rep = validate_ohlcv(cleaned, "forex", s.session_for("forex"))
+        get_store().save_dataset(cleaned, name=f"{sym} {tf} ({source_label})", symbol=sym, asset_class="forex",
+                                 timeframe=tf, source=source_label.lower().replace(" ", "_"))
+        saved.append(f"{sym} ({len(cleaned):,} bars{', ' + str(len(rep.errors)) + ' issues' if rep.errors else ''})")
+    st.cache_data.clear()
+    if saved:
+        st.success("Saved: " + "; ".join(saved) + ". Charts, backtests, Monte Carlo and the trainer now use this "
+                   "real data instead of the synthetic samples.")
+
+
+def _dukascopy_download():
+    from edgelab.data.providers import dukascopy
+
+    s = get_settings()
+    st.markdown(
+        "**Free, no account, no key.** [Dukascopy](https://www.dukascopy.com) (a Swiss bank and broker) publishes "
+        "years of 1-minute forex candles. EdgeLab downloads one small file per day and builds the timeframe you "
+        "choose. Ideal for backtests, Monte Carlo and the replay trainer. **History only:** a day's file appears "
+        "after that day ends, so it can't feed the live scanner (use MetaTrader 5 or OANDA for that). Prices are "
+        "Dukascopy's bid quotes, which can differ slightly from your broker's.")
+    c1, c2, c3 = st.columns([3, 1, 1])
+    syms = c1.multiselect("Pairs", dukascopy.SUPPORTED, default=[x for x in s.watchlist if x in dukascopy.SUPPORTED],
+                          key="duk_syms")
+    tf = c2.selectbox("Build timeframe", ["5m", "15m", "1h"], key="duk_tf")
+    days = c3.number_input("Days of history", 5, 3650, 180, key="duk_days")
+    st.caption(f"About {len(syms) * days * 5 / 7:,.0f} small files (~{len(syms) * days / 7 * 5 * 0.05:,.0f} s at "
+               "typical speeds). Weekends are skipped.")
+    if st.button("Download free history", type="primary", disabled=not syms, key="duk_go"):
+        end = pd.Timestamp.now(tz="UTC").normalize()
+        start = end - pd.Timedelta(days=int(days))
+        bar = st.progress(0.0, text="Starting...")
+        results = []
+        for k, sym in enumerate(syms):
+            inst = get_instrument(sym)
+            try:
+                df = dukascopy.fetch_bars(sym, int(tf[:-1]) * (60 if tf.endswith("h") else 1), start, end,
+                                          s.session_for("forex"), decimals=inst.decimals,
+                                          progress=lambda f, m, k=k: bar.progress(min(1.0, (k + f) / len(syms)), text=m))
+            except Exception as e:  # noqa: BLE001
+                st.error(f"{sym}: {e}")
+                continue
+            if df.empty:
+                st.warning(f"{sym}: no data returned for that period.")
+            results.append((sym, tf, df))
+        bar.empty()
+        _save_downloads(results, "Dukascopy", s)
+
+
+# --------------------------------------------------------------------------- MetaTrader 5 (Windows)
+def _mt5_download():
+    from edgelab.data.providers.mt5 import MT5Client, MT5Error
+
+    s = get_settings()
+    st.markdown(
+        "**Free with any MetaTrader 5 demo account** (most UK brokers offer one). Gives history AND live candles, "
+        "so the live scanner can use it instead of OANDA. Windows only.\n\n"
+        "1. Install MetaTrader 5 from your broker (or metaquotes.net), open it and log in to a demo account.\n"
+        "2. Keep it running. EdgeLab connects to it on this computer (read-only - it never places orders).\n"
+        "3. Choose the live source under Settings -> Alerts if you want the scanner to use it.")
+    with st.form("mt5_settings"):
+        c1, c2 = st.columns(2)
+        tz_opts = ["Europe/Athens", "UTC", "Europe/London", "Etc/GMT-2", "Etc/GMT-3"]
+        tz = c1.selectbox("Broker server timezone", tz_opts,
+                          index=tz_opts.index(s.mt5_server_tz) if s.mt5_server_tz in tz_opts else 0,
+                          help="Most MT5 brokers run their clocks on GMT+2 (winter) / GMT+3 (summer) = Europe/Athens. "
+                               "If imported charts look shifted by hours, change this.")
+        suf = c2.text_input("Symbol suffix (if your broker uses one)", s.mt5_symbol_suffix,
+                            help="e.g. '.a' if pairs are named EURUSD.a. Leave blank to auto-detect.")
+        if st.form_submit_button("Save"):
+            from edgelab.ui.state import update_settings
+
+            s.mt5_server_tz, s.mt5_symbol_suffix = tz, suf.strip()
+            update_settings(s)
+    c1, c2, c3 = st.columns([3, 1, 1])
+    syms = c1.multiselect("Pairs", FOREX_PAIRS, default=s.watchlist, key="mt5_syms")
+    tf = c2.selectbox("Timeframe", ["5m", "15m", "1h", "1d"], key="mt5_tf")
+    days = c3.number_input("Days of history", 5, 3650, 180, key="mt5_days")
+    if st.button("Download from MetaTrader 5", type="primary", disabled=not syms, key="mt5_go"):
+        try:
+            client = MT5Client(s.mt5_server_tz, s.mt5_symbol_suffix)
+        except MT5Error as e:
+            st.error(str(e))
+            return
+        end = pd.Timestamp.now(tz="UTC")
+        results = []
+        for sym in syms:
+            try:
+                results.append((sym, tf, client.candles(sym, tf, end - pd.Timedelta(days=int(days)), end)))
+            except MT5Error as e:
+                st.error(f"{sym}: {e}")
+        _save_downloads(results, "MetaTrader 5", s)
 
 
 # --------------------------------------------------------------------------- crypto download
