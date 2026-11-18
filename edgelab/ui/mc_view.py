@@ -38,8 +38,14 @@ def controls(key: str, balance: float, risk_pct: float, fixed_risk: float | None
     sizing = c1.radio("Position sizing", sizing_opts, key=f"{key}_z", horizontal=False,
                       format_func={"fixed_fraction": f"Risk {risk_pct:.2f}% of current balance each trade",
                                    "fixed_amount": f"Fixed 1 mini lot (about {_money(fixed_risk or 0, ccy)} risk/trade)"}.get)
-    start = c2.number_input(f"Starting balance ({ccy})", 50.0, 10_000_000.0, float(round(balance, 2)), 100.0,
-                            key=f"{key}_b")
+    from edgelab.ui.page_settings import clamp
+
+    if balance is None or balance < 50:
+        st.warning(f"Your current balance shows as {_money(balance or 0, ccy)}, so the simulation starts from "
+                   f"{_money(10_000, ccy)} instead. Fix the balance under Settings -> Account (or sync from OANDA).")
+    start = c2.number_input(f"Starting balance ({ccy})", 50.0, 10_000_000.0,
+                            clamp(round(balance or 0, 2), 50.0, 10_000_000.0, 10_000.0) if (balance or 0) >= 50
+                            else 10_000.0, 100.0, key=f"{key}_b")
     limit = c3.number_input("Loss limit (% of starting balance)", 1.0, 100.0, 20.0, 1.0, key=f"{key}_l",
                             help="The 'risk of ruin' line: the chance of losing this much at ANY point.")
     return MCConfig(n_trades=int(n_trades), n_sims=int(n_sims), start_balance=float(start), sizing=sizing,

@@ -167,3 +167,29 @@ def test_balance_entered_now_beats_earlier_entry_in_same_minute(tmp_path):
     st.add_balance_event(_event_time(now_uk.date(), now_uk.time()), "set", 2_500, "GBP")
     st.add_balance_event(_event_time(now_uk.date(), None), "deposit", 500, "GBP")
     assert summarise(st.load_balance_events(), None, "GBP", 0).balance == pytest.approx(3_000)
+
+
+class MultiAccount(FakeOanda):
+    """Token that sees an empty sub-account first and the funded practice account second."""
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.calls.append(("GET", url, dict(params or {})))
+        if url.endswith("/v3/accounts"):
+            return Resp(200, {"accounts": [{"id": "101-004-1-002"}, {"id": "101-004-1-001"}]})
+        if url.endswith("101-004-1-002/summary"):
+            return Resp(200, {"account": {"balance": "0.0000", "NAV": "0", "currency": "GBP"}})
+        return super().get(url, params, headers, timeout)
+
+
+def test_sync_picks_the_funded_account_not_the_first():
+    cl = oanda.OandaClient("good", session=MultiAccount(), pause=0)
+    assert [a.balance for a in cl.account_summaries()] == [0.0, 2500.5]
+    assert cl.account_summary().account_id == "101-004-1-001"
+    assert cl.account_summary("101-004-1-002").balance == 0.0   # an explicit choice is respected
+
+
+def test_clamp_keeps_widget_values_in_range():
+    from edgelab.ui.page_settings import clamp
+
+    assert clamp(0.0, 50.0, 1e7) == 50.0 and clamp(-20, 0, 10) == 0 and clamp(5, 0, 10) == 5
+    assert clamp(None, 50.0, 100.0, 75.0) == 75.0 and clamp(float("nan"), 1, 2) == 1

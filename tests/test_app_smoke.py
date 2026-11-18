@@ -230,3 +230,24 @@ def test_formatters_handle_missing_values():
     assert money(None, "GBP") == "-" and money(float("nan"), "GBP") == "-" and money(12.5, "GBP") == "£12.50"
     assert num(None, ".2f", "%") == "-" and num(1.234, ".1f", "%") == "1.2%"
     assert "closed at" in describe({"type": "stop-loss", "symbol": "EURUSD", "price": 1.1, "pnl": None, "pips": None})
+
+
+def test_monte_carlo_and_paper_with_zero_balance(small_home):
+    """Regression: a balance of 0 crashed the Monte Carlo starting-balance box (min 50)."""
+    import pandas as pd
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, db_path, save_settings
+    from edgelab.data.store import Store
+
+    save_settings(Settings(watchlist=["EURUSD"]))
+    Store(db_path()).add_balance_event(pd.Timestamp.now(tz="UTC"), "set", 0.0, "GBP", "empty account")
+    for page in ("page_backtest", "page_paper", "page_settings", "page_position"):
+        at = AppTest.from_string(f"from edgelab.ui import {page}\n{page}.render()", default_timeout=120)
+        at.run()
+        assert not at.exception, (page, [e.value for e in at.exception])
+    at = AppTest.from_string("from edgelab.ui import page_backtest\npage_backtest.render()", default_timeout=120)
+    at.run()
+    next(b for b in at.button if "Run Monte Carlo simulation" in b.label).click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("Chance of being up" in m.label for m in at.metric)

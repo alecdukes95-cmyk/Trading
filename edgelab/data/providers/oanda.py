@@ -90,12 +90,20 @@ class OandaClient:
     def accounts(self) -> list[str]:
         return [a["id"] for a in self._get("/v3/accounts").get("accounts", [])]
 
+    def account_summaries(self) -> list[AccountSummary]:
+        """Every account this token can see (practice tokens often include empty sub-accounts)."""
+        return [self._summary(i) for i in self.accounts()]
+
     def account_summary(self, account_id: str | None = None) -> AccountSummary:
-        if not account_id:
-            ids = self.accounts()
-            if not ids:
-                raise OandaError("No accounts found for this token.")
-            account_id = ids[0]
+        """The chosen account - or, if none is chosen, the one with the largest balance (not just the first)."""
+        if account_id:
+            return self._summary(account_id)
+        all_ = self.account_summaries()
+        if not all_:
+            raise OandaError("No accounts found for this token.")
+        return max(all_, key=lambda a: a.balance)
+
+    def _summary(self, account_id: str) -> AccountSummary:
         a = self._get(f"/v3/accounts/{account_id}/summary")["account"]
         f = lambda k, d=0.0: float(a.get(k, d) or d)  # noqa: E731
         mco = a.get("marginCloseoutPercent")

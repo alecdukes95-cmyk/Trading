@@ -21,6 +21,17 @@ def money(x, ccy: str) -> str:
     return f"{CURRENCY_SYMBOL.get(ccy, ccy + ' ')}{x:,.2f}"
 
 
+def clamp(value, lo: float, hi: float, fallback: float | None = None) -> float:
+    """Keep a pre-filled widget value inside its allowed range (Streamlit errors otherwise)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        v = float("nan")
+    if v != v:
+        v = fallback if fallback is not None else lo
+    return float(min(max(v, lo), hi))
+
+
 def num(x, spec: str = ".2f", suffix: str = "", default: str = "-") -> str:
     """Format a number that may be missing: num(None, '.2f', '%') -> '-'."""
     if x is None or (isinstance(x, float) and x != x):
@@ -91,6 +102,10 @@ def _balance(s):
     c3.metric("Closed trades counted", summ.n_trades)
     st.caption(summ.describe() + ". Your balance updates automatically as trades are recorded; enter a new "
                "figure, or sync from OANDA, whenever you want to re-anchor it.")
+    if summ.balance <= 0:
+        st.error(f"Your balance shows as {money(summ.balance, ccy)}. Sizing, risk checks and Monte Carlo need a real "
+                 "figure: enter your balance below, or use 'Sync from OANDA' -> 'Find my OANDA accounts' to pick the "
+                 "funded account (a token can see several, some of them empty).")
     if summ.n_skipped:
         st.warning(f"{summ.n_skipped} recorded trades closed after your balance figure have no {ccy} P&L, so they "
                    "were not counted. Re-import them with the account currency set correctly.")
@@ -101,7 +116,8 @@ def _balance(s):
     with t_set:
         with st.form("set_balance"):
             c1, c2, c3 = st.columns(3)
-            amt = c1.number_input(f"Balance ({ccy})", min_value=0.0, value=float(round(summ.balance, 2)), step=100.0)
+            amt = c1.number_input(f"Balance ({ccy})", min_value=0.0, value=clamp(round(summ.balance, 2), 0.0, 1e9),
+                                  step=100.0)
             d = c2.date_input("As of date", value=pd.Timestamp.now(tz="Europe/London").date())
             t = c3.time_input("Time (UK)", value=pd.Timestamp.now(tz="Europe/London").floor("min").time())
             note = st.text_input("Note (optional)", "")
@@ -143,7 +159,7 @@ def _balance(s):
             env = c1.selectbox("Account type", ["practice", "live"], index=0 if s.oanda_environment == "practice" else 1,
                                format_func=lambda e: {"practice": "Practice (demo)", "live": "Live"}[e])
             acct = c2.text_input("Account ID (optional)", s.oanda_account_id,
-                                 help="Looks like 101-004-1234567-001. Leave blank to use the first account.")
+                                 help="Looks like 101-004-1234567-001. Leave blank to use the account with the largest balance.")
             auto = c3.checkbox("Sync automatically when EdgeLab starts", value=bool(s.oanda_auto_sync))
             save = st.form_submit_button("Save OANDA settings")
             go = st.form_submit_button("Sync balance now", type="primary", disabled=not has_key)
@@ -160,6 +176,30 @@ def _balance(s):
                            f"{res.margin_used:,.2f}, available {res.margin_available:,.2f}, {res.open_trades} open trades.")
             except Exception as e:  # noqa: BLE001
                 st.error(f"Could not sync from OANDA: {e}")
+        if st.button("Find my OANDA accounts", disabled=not has_key,
+                     help="Lists every account your token can see. Practice logins often include empty sub-accounts."):
+            from edgelab.ui.state import oanda_client
+
+            try:
+                st.session_state["_oanda_accounts"] = [
+                    {"id": a.account_id, "currency": a.currency, "balance": a.balance, "nav": a.nav}
+                    for a in oanda_client().account_summaries()]
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Could not list accounts: {e}")
+        accts = st.session_state.get("_oanda_accounts")
+        if accts:
+            st.dataframe(pd.DataFrame(accts), hide_index=True)
+            pick = st.selectbox("Use this account", [a["id"] for a in accts],
+                                format_func=lambda i: next(f"{a['id']} - {a['balance']:,.2f} {a['currency']}"
+                                                           for a in accts if a["id"] == i))
+            if st.button("Use selected account and sync"):
+                s.oanda_account_id = pick
+                update_settings(s)
+                try:
+                    res = sync_oanda_balance()
+                    st.success(f"Synced {res.account_id}: balance {res.balance:,.2f} {res.currency}.")
+                except Exception as e:  # noqa: BLE001
+                    st.error(str(e))
         last = s.oanda_last_summary
         if last:
             st.caption(f"Last sync {pd.Timestamp(last['fetched_at']).tz_convert('Europe/London'):%d %b %Y %H:%M} UK: "

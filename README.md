@@ -236,7 +236,7 @@ Copy `.env.example` to `.env` and paste keys there. `.env` is ignored by git, so
 
 Double-click `run_tests.bat`, or from a terminal: `.venv\Scripts\python -m pytest`.
 
-There are 151 automated checks. They cover:
+There are 154 automated checks. They cover:
 
 - **Indicators:** hand-computed values, plus a test proving no indicator uses future bars.
 - **Sessions and DST:** trading-day boundaries and daylight-saving handling.

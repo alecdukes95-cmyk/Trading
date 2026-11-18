@@ -137,6 +137,9 @@ def sync_oanda_balance() -> AccountSummary:
     """Read balance/margin from OANDA (GET only) and record it as the new balance figure."""
     s = get_settings()
     summ = oanda_client().account_summary(s.oanda_account_id or None)
+    if summ.balance <= 0:
+        raise ValueError(f"OANDA account {summ.account_id} has a balance of {summ.balance:,.2f} {summ.currency}, so "
+                         "your EdgeLab balance was NOT changed. Use 'Find my OANDA accounts' to pick the funded one.")
     get_store().add_balance_event(summ.fetched_at, "sync", summ.balance, summ.currency,
                                   f"OANDA {s.oanda_environment} account {summ.account_id}")
     s.oanda_last_summary = {"account_id": summ.account_id, "currency": summ.currency, "balance": summ.balance,

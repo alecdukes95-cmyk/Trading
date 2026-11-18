@@ -9,7 +9,7 @@ from edgelab.paper.service import describe
 from edgelab.patterns.base import PATTERNS, TRADEABLE
 from edgelab.risk import units_for_risk, value_per_price_unit
 from edgelab.ui.charts import ChartOptions, build_chart
-from edgelab.ui.page_settings import money, num
+from edgelab.ui.page_settings import clamp, money, num
 from edgelab.ui.state import balance_summary, get_paper, get_settings, get_store
 
 SETUPS = [PATTERNS[k].name for k in TRADEABLE if k != "bear_flag"] + ["My own idea", "Alert from the scanner"]
@@ -325,7 +325,8 @@ def _tabs(svc, s):
         bal = balance_summary().balance
         st.markdown(f"Paper balance started at **{money(svc.book.start_balance, s.account_currency)}**. Your real "
                     f"balance is {money(bal, s.account_currency)}.")
-        start = st.number_input("Restart the paper account with", 100.0, 10_000_000.0, float(round(bal, 2)), 500.0)
+        start = st.number_input("Restart the paper account with", 100.0, 10_000_000.0,
+                                clamp(round(bal, 2), 100.0, 10_000_000.0, 10_000.0), 500.0)
         if st.button("Reset paper account (clears paper trades and paper journal)"):
             svc.book.reset(start, s.account_currency)
             st.success("Paper account reset.")
