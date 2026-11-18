@@ -66,7 +66,7 @@ def history_box(stats: dict | None, source: str, is_synthetic: bool) -> None:
 
 def render_signal(sig, df, inst, *, tz: str, timeframe: str | None, stats: dict | None, stats_source: str,
                   is_synthetic: bool, position: dict | None, expiry_minutes: int | None = None,
-                  outcome=None, allow_reveal: bool = True, key: str = "") -> None:
+                  outcome=None, allow_reveal: bool = True, key: str = "", monte_carlo: bool = True) -> None:
     info = PATTERNS[sig.pattern]
     st.markdown(f"### {ARROW.get(sig.direction, '')} {sig.title}")
     st.caption(f"Signal bar closed {sig.ts.tz_convert(tz):%a %d %b %H:%M} ({tz}) at {_p(sig.price, inst.decimals)}. "
@@ -107,6 +107,10 @@ def render_signal(sig, df, inst, *, tz: str, timeframe: str | None, stats: dict 
             if t in GLOSSARY:
                 st.markdown(f"*{t}:* {GLOSSARY[t].short()}")
     history_box(stats, stats_source, is_synthetic)
+    if monte_carlo and sig.plan and timeframe:
+        from edgelab.ui.mc_view import signal_mc_section
+
+        signal_mc_section(sig.pattern, sig.direction, inst.symbol, timeframe, key)
 
 
 def stats_to_dict(st_obj) -> dict | None:

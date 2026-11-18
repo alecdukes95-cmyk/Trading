@@ -4,7 +4,7 @@ import pytest
 from edgelab.data.sample import generate_bars
 from edgelab.data.store import Store
 
-PAGES = ["page_home", "page_signals", "page_chart", "page_position", "page_data", "page_glossary", "page_settings"]
+PAGES = ["page_home", "page_signals", "page_chart", "page_backtest", "page_position", "page_data", "page_glossary", "page_settings"]
 
 
 @pytest.fixture
@@ -97,3 +97,32 @@ def test_signals_page_shows_simulated_alerts(small_home):
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("SIMULATION" in e.label for e in at.expander)
+
+
+def test_backtest_page_and_monte_carlo_button(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, save_settings
+
+    save_settings(Settings(watchlist=["EURUSD"]))
+    at = AppTest.from_string("from edgelab.ui import page_backtest\npage_backtest.render()", default_timeout=120)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any(m.label == "Trades" for m in at.metric)
+    btn = next(b for b in at.button if "Run Monte Carlo simulation" in b.label)
+    btn.click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("Chance of being up" in m.label for m in at.metric)
+
+
+def test_monte_carlo_button_on_a_chart_pattern(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_string("from edgelab.ui import page_chart\npage_chart.render()", default_timeout=120)
+    at.run()
+    assert not at.exception
+    btns = [b for b in at.button if "Monte Carlo for this setup" in b.label]
+    assert btns, "the explain panel should offer a Monte Carlo button"
+    btns[0].click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("Chance of being up" in m.label for m in at.metric)

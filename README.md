@@ -23,6 +23,37 @@ On the very first launch, EdgeLab creates its sample data, which takes 10–20 s
 
 **Mac or Linux:** run `./run.sh` in a terminal instead.
 
+## Backtests & Monte Carlo
+
+**Backtests & Monte Carlo** replays every past occurrence of every pattern across your pairs. It uses your OANDA data where you've downloaded it, otherwise the clearly flagged synthetic samples.
+
+**What the backtest shows:**
+
+- **Headline numbers:** trades, win rate, average R after costs, total R, profit factor and worst drawdown.
+- **Charts:** a cumulative-result curve and a histogram of trade results.
+- **Breakdowns:** by pattern, by pair, by session, and in-sample (first 70%) vs out-of-sample (last 30%).
+- **An edge check:** a bootstrap 95% range for the average, and the chance that luck alone produced it. The bar is raised for the number of variations you're comparing (the multiple-testing correction).
+
+**🎲 Run Monte Carlo** simulates thousands of possible futures from those trade results. You can choose:
+
+- **Method:**
+  - *bootstrap:* future trades drawn at random from past results;
+  - *parameter uncertainty:* the win rate and average win/loss also vary within their error margins, which is the most honest view for short histories;
+  - *shuffle:* the same trades in random order.
+- **Sizing:** 0.65% of current balance per trade, or a fixed 1 mini lot.
+- **Horizon, starting balance (your current balance) and loss limit.**
+
+**What it shows:**
+
+- **Odds and outcomes:** the chance of being up, the typical and bad-case (worst 5%) balance, and the chance of hitting your loss limit (risk of ruin).
+- **Drawdowns:** typical and bad-case drawdown, plus the longest losing streak.
+- **Recovery:** how long it takes to climb back from the worst drop, in trades and trading days.
+- **Charts:** an equity fan chart and a drawdown histogram.
+- **A sizing table:** your rule against 0.25–2% risk and quarter, half and full Kelly.
+- **A reality check:** when the edge isn't statistically proven, it also shows what the same futures look like if the true edge is zero.
+
+The same **🎲 Monte Carlo for this setup** button appears on every alert card and every pattern explanation on the chart. It simulates from that pattern's own history, on that pair or across your whole watchlist. You can also simulate manual stats or your imported trade log.
+
 ## Live pattern alerts (Stage 2)
 
 **Live signals** watches your forex pairs and alerts you whenever a pattern completes on a closed candle. Each alert includes:
@@ -153,7 +184,7 @@ Copy `.env.example` to `.env` and paste keys there. `.env` is ignored by git, so
 
 Double-click `run_tests.bat`, or from a terminal: `.venv\Scripts\python -m pytest`.
 
-There are 107 automated checks. They cover:
+There are 120 automated checks. They cover:
 
 - **Indicators:** hand-computed values, plus a test proving no indicator uses future bars.
 - **Sessions and DST:** trading-day boundaries and daylight-saving handling.
@@ -167,6 +198,7 @@ There are 107 automated checks. They cover:
 - **Patterns:** a test proving no detector uses future bars, plus hand-built examples of each main pattern.
 - **Trade plans and outcomes:** the stop-entry and minimum-stop rules, wins, losses, stop-first ties, gaps and costs.
 - **Statistics:** the plain-English verdicts.
+- **Monte Carlo maths:** exact equity paths, drawdown, recovery and streaks, shuffle conserving the total, parameter uncertainty widening the range, Kelly against its formula, and edge-test verdicts including the multiple-testing correction.
 - **Scanner and alerts:** the live scanner (only new candles alert, no duplicates), the simulation, notifications, and the alert page.
 - **Every page of the app:** each one renders without errors.
 
@@ -179,6 +211,8 @@ edgelab/
                        sample-data generator, trade-log import, providers/ (OANDA read-only, Coinbase)
   indicators/          SMA/EMA/RMA, ATR, RSI, MACD, VWAP, opening range, prior-day levels, pivots, S/R
   patterns/            detectors, trade plans, outcome replay, pattern statistics
+  backtest/            pattern backtests across pairs (trade tables, in/out-of-sample split)
+  montecarlo/          bootstrap / shuffle / parameter-perturbation engine, edge test, Kelly, sizing table
   live/                background scanner (live OANDA / simulation), alerts, desktop notifications
   learning/            glossary, "what happened today" narratives
   ui/                  Streamlit pages and the Plotly chart builder
@@ -198,5 +232,5 @@ userdata/              YOUR data: edgelab.db (SQLite) and settings.json - create
 2. ✅ Pattern detection, the "explain this" panel and live alerts
 3. 🔜 Learning mode: bar-by-bar replay with scoring, quizzes from real charts, a concept library, and progress tracking.
 4. Edge builder and backtester: no-code rules and realistic costs, with in-sample/out-of-sample splits, walk-forward testing and overfitting warnings.
-5. Monte Carlo engine: bootstrap resampling, trade shuffling, parameter perturbation, risk of ruin and fractional Kelly.
+5. ✅ Monte Carlo engine (built early, on request): bootstrap resampling, trade shuffling, parameter perturbation, risk of ruin and fractional Kelly.
 6. Trade journal with notes and screenshots, feeding results back into the stats.
