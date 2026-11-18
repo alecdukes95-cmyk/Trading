@@ -9,6 +9,7 @@ from pathlib import Path
 from edgelab.brokers import BrokerProfile, all_profiles
 from edgelab.data.sessions import DEFAULT_SESSIONS, SessionConfig
 from edgelab.fx import DEFAULT_REFERENCE_RATES, FxConverter
+from edgelab.instruments import DEFAULT_WATCHLIST
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -58,6 +59,17 @@ class Settings:
     oanda_auto_sync: bool = False             # refresh balance from OANDA when the app starts
     oanda_last_summary: dict = field(default_factory=dict)
     sessions: dict = field(default_factory=lambda: {k: v.to_dict() for k, v in DEFAULT_SESSIONS.items()})
+    show_crypto: bool = False                 # crypto is parked for now
+    # ---- pattern alerts / live scanner
+    watchlist: list = field(default_factory=lambda: list(DEFAULT_WATCHLIST))
+    scan_timeframes: list = field(default_factory=lambda: ["15m"])
+    alert_quality: str = "strict"             # "strict" (no cautions), "normal" (at most 1), "all"
+    enabled_patterns: list = field(default_factory=list)   # empty = all patterns
+    target_r: float = 2.0                     # take-profit distance as a multiple of the risk
+    order_expiry_bars: int = 3                # cancel an unfilled entry order after this many bars
+    notify_desktop: bool = True
+    notify_sound: bool = True
+    notify_only_in_window: bool = True        # only alert during your trading window
 
     def session_for(self, asset_class: str) -> SessionConfig:
         d = self.sessions.get(asset_class)

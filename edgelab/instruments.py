@@ -46,16 +46,31 @@ class Instrument:
 
 
 INSTRUMENTS: dict[str, Instrument] = {
+    # majors
     "EURUSD": Instrument("EURUSD", "forex", "EUR", "USD", 0.0001, 5, 1.0850, 0.0040, 320),
     "GBPUSD": Instrument("GBPUSD", "forex", "GBP", "USD", 0.0001, 5, 1.2700, 0.0048, 300),
     "USDJPY": Instrument("USDJPY", "forex", "USD", "JPY", 0.01, 3, 150.00, 0.0052, 330),
+    "USDCHF": Instrument("USDCHF", "forex", "USD", "CHF", 0.0001, 5, 0.8800, 0.0045, 220),
+    "USDCAD": Instrument("USDCAD", "forex", "USD", "CAD", 0.0001, 5, 1.3600, 0.0040, 240),
+    "AUDUSD": Instrument("AUDUSD", "forex", "AUD", "USD", 0.0001, 5, 0.6600, 0.0058, 260),
+    "NZDUSD": Instrument("NZDUSD", "forex", "NZD", "USD", 0.0001, 5, 0.6000, 0.0060, 200),
+    # crosses
     "EURGBP": Instrument("EURGBP", "forex", "EUR", "GBP", 0.0001, 5, 0.8550, 0.0035, 250),
+    "EURJPY": Instrument("EURJPY", "forex", "EUR", "JPY", 0.01, 3, 162.00, 0.0058, 300),
     "GBPJPY": Instrument("GBPJPY", "forex", "GBP", "JPY", 0.01, 3, 190.00, 0.0065, 350),
+    "EURCHF": Instrument("EURCHF", "forex", "EUR", "CHF", 0.0001, 5, 0.9500, 0.0035, 180),
+    "GBPCHF": Instrument("GBPCHF", "forex", "GBP", "CHF", 0.0001, 5, 1.1200, 0.0050, 200),
+    "AUDJPY": Instrument("AUDJPY", "forex", "AUD", "JPY", 0.01, 3, 99.00, 0.0072, 260),
+    "EURAUD": Instrument("EURAUD", "forex", "EUR", "AUD", 0.0001, 5, 1.6400, 0.0055, 220),
+    # crypto (parked for now - hidden in the app unless enabled in Settings)
     "BTCUSD": Instrument("BTCUSD", "crypto", "BTC", "USD", 1.0, 2, 65000.0, 0.024, 12.0),
     "ETHUSD": Instrument("ETHUSD", "crypto", "ETH", "USD", 0.1, 2, 3200.0, 0.032, 150.0),
 }
 
-SAMPLE_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "BTCUSD", "ETHUSD"]
+FOREX_SYMBOLS = [k for k, v in INSTRUMENTS.items() if v.asset_class == "forex"]
+SAMPLE_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "EURGBP", "EURJPY",
+                  "GBPJPY"]
+DEFAULT_WATCHLIST = ["EURUSD", "GBPUSD", "USDJPY", "EURGBP", "GBPJPY", "AUDUSD", "USDCAD", "EURJPY"]
 
 
 def normalize_symbol(symbol: str) -> str:

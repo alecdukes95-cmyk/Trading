@@ -7,6 +7,7 @@ learn how easily backtests fool people.
 """
 from __future__ import annotations
 
+import os
 import zlib
 
 import numpy as np
@@ -92,20 +93,22 @@ def generate_bars(symbol: str, start: str = SAMPLE_START, end: str = SAMPLE_END,
 
 
 def ensure_sample_data(store, symbols=None, progress=None) -> list[int]:
-    """Create the bundled synthetic datasets once (deterministic, ~1 year of 5-minute bars each)."""
-    if store.has_samples():
-        return []
+    """Create any missing bundled synthetic datasets (deterministic, ~1 year of 5-minute bars each)."""
+    env = os.environ.get("EDGELAB_SAMPLE_SYMBOLS")  # used by tests to keep things fast
+    symbols = symbols or ([x.strip() for x in env.split(",") if x.strip()] if env else SAMPLE_SYMBOLS)
+    ds = store.list_datasets()
+    have = set(ds.loc[ds["is_sample"] == 1, "symbol"]) if not ds.empty else set()
+    missing = [s for s in symbols if s not in have]
     ids = []
-    symbols = symbols or SAMPLE_SYMBOLS
-    for i, sym in enumerate(symbols):
+    for i, sym in enumerate(missing):
         if progress:
-            progress(i / len(symbols), f"Creating sample data for {sym}...")
+            progress(i / len(missing), f"Creating sample data for {sym}...")
         inst = get_instrument(sym)
         df = generate_bars(sym)
         ids.append(store.save_dataset(df, name=f"{sym} 5m (SAMPLE - synthetic)", symbol=sym,
                                       asset_class=inst.asset_class, timeframe="5m", source="synthetic",
                                       is_sample=True,
                                       notes="Synthetic random data with realistic texture. Contains no real edge."))
-    if progress:
+    if progress and missing:
         progress(1.0, "Sample data ready.")
     return ids

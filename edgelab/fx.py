@@ -25,6 +25,10 @@ DEFAULT_REFERENCE_RATES = {
     "EURUSD": 1.085,
     "USDJPY": 150.0,
     "EURGBP": 0.855,
+    "USDCHF": 0.88,
+    "USDCAD": 1.36,
+    "AUDUSD": 0.66,
+    "NZDUSD": 0.60,
     "BTCUSD": 65000.0,
     "ETHUSD": 3200.0,
 }

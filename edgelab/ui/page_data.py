@@ -24,14 +24,18 @@ DATE_ORDER = {"Auto-detect": None, "Day first (31/01/2026)": True, "Month first 
 def render():
     st.title("Data")
     st.caption("Bring in price data and trade logs. Everything is stored locally on this computer.")
-    t0, t1, t2, t3, t4 = st.tabs(["🏦 Download forex (OANDA)", "📄 Import price CSV", "⬇️ Download crypto",
-                                  "📒 Import trade log", "🗂️ My datasets"])
-    with t0:
+    names = ["🏦 Download forex (OANDA)", "📄 Import price CSV", "📒 Import trade log", "🗂️ My datasets"]
+    if get_settings().show_crypto:
+        names.insert(2, "⬇️ Download crypto")
+    tabs = dict(zip(names, st.tabs(names)))
+    with tabs["🏦 Download forex (OANDA)"]:
         _oanda_download()
-    with t1:
+    with tabs["📄 Import price CSV"]:
         _csv_wizard()
-    with t2:
-        _crypto_download()
+    if "⬇️ Download crypto" in tabs:
+        with tabs["⬇️ Download crypto"]:
+            _crypto_download()
+    t3, t4 = tabs["📒 Import trade log"], tabs["🗂️ My datasets"]
     with t3:
         _trade_log_wizard()
     with t4:
@@ -141,6 +145,11 @@ def _oanda_download():
             "4. Close and re-open EdgeLab (run.bat).\n\n"
             "Treat the token like a password: it never leaves your computer except to talk to OANDA.")
         return
+    with st.container(border=True):
+        st.markdown(f"**Quick start:** download 5-minute data for your whole watchlist ({', '.join(s.watchlist)}).")
+        qd = st.number_input("Days of history for each pair", 5, 730, 120, key="oanda_quick_days")
+        if st.button("Download my watchlist", type="primary"):
+            _oanda_many(s.watchlist, "5m", int(qd), s)
     c1, c2, c3 = st.columns(3)
     sym = c1.selectbox("Pair", list(oanda.INSTRUMENTS), key="oanda_sym")
     tf = c2.selectbox("Timeframe", ["5m", "15m", "1h", "1d"], key="oanda_tf")
@@ -204,6 +213,38 @@ def _oanda_download():
             update_settings(s)
             st.session_state.pop("oanda_spread")
             st.success("Spread saved to your broker profile.")
+
+
+def _oanda_many(symbols, tf, days, s):
+    from edgelab.data.providers import oanda
+    from edgelab.data.sessions import in_window
+    from edgelab.ui.state import oanda_client
+
+    end = pd.Timestamp.now(tz="UTC").floor("min")
+    bar = st.progress(0.0, text="Connecting to OANDA...")
+    done = []
+    for k, sym in enumerate(symbols):
+        try:
+            df = oanda_client().candles(sym, tf, end - pd.Timedelta(days=days), end, price="MBA",
+                                        progress=lambda f, m, k=k: bar.progress(min(1.0, (k + f) / len(symbols)),
+                                                                                 text=f"{sym}: {m}"))
+        except Exception as e:  # noqa: BLE001
+            st.error(f"{sym}: {e}")
+            continue
+        if df.empty:
+            st.warning(f"{sym}: no candles returned.")
+            continue
+        inst = get_instrument(sym)
+        stats = oanda.spread_stats(df, inst.pip, in_window(df.index, s.session_for("forex")))
+        cleaned, _ = clean_ohlcv(df[["open", "high", "low", "close", "volume"]])
+        note = f"Spread median {stats['median_window']:.2f} pips in your window" if stats and "median_window" in stats else ""
+        get_store().save_dataset(cleaned, name=f"{sym} {tf} (OANDA {s.oanda_environment})", symbol=sym,
+                                 asset_class="forex", timeframe=tf, source=f"oanda:{s.oanda_environment}", notes=note)
+        done.append(f"{sym} ({len(cleaned):,} bars" + (f", spread {stats['median_window']:.1f} pips" if note else "") + ")")
+    bar.empty()
+    st.cache_data.clear()
+    if done:
+        st.success("Saved: " + "; ".join(done) + ". Charts and the scanner now use this real data instead of the samples.")
 
 
 # --------------------------------------------------------------------------- crypto download

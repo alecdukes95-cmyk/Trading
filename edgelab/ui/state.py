@@ -34,12 +34,13 @@ def update_settings(s: Settings) -> None:
 
 
 def ensure_samples() -> None:
-    store = get_store()
-    if store.has_samples():
+    if st.session_state.get("_samples_checked"):
         return
-    bar = st.progress(0.0, text="First launch: creating sample data (about 10-20 seconds, only once)...")
+    store = get_store()
+    bar = st.empty()
     ensure_sample_data(store, progress=lambda f, msg: bar.progress(min(1.0, f), text=msg))
     bar.empty()
+    st.session_state["_samples_checked"] = True
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -79,12 +80,16 @@ def dataset_label(row) -> str:
 
 def pick_dataset(key: str = "dataset", container=st) -> dict | None:
     ds = datasets()
+    if not ds.empty and not get_settings().show_crypto:
+        ds = ds[ds["asset_class"] != "crypto"]
     if ds.empty:
         container.warning("No datasets yet. Go to **Data** to import one.")
         return None
     labels = {int(r["id"]): dataset_label(r) for _, r in ds.iterrows()}
     ids = list(labels)
-    default = st.session_state.get(f"{key}_id", ids[0])
+    wl = get_settings().watchlist
+    preferred = next((int(r["id"]) for sym in wl[:1] for _, r in ds.iterrows() if r["symbol"] == sym), ids[0])
+    default = st.session_state.get(f"{key}_id", preferred)
     if default not in ids:
         default = ids[0]
     chosen = container.selectbox("Dataset", ids, index=ids.index(default), format_func=labels.get, key=f"{key}_sel")
@@ -147,3 +152,26 @@ def _maybe_auto_sync() -> None:
         sync_oanda_balance()
     except Exception as e:  # noqa: BLE001
         st.session_state["_oanda_sync_error"] = str(e)
+
+
+# --------------------------------------------------------------------------- patterns and scanner
+@st.cache_data(show_spinner="Scanning the history for patterns...", max_entries=6)
+def pattern_analysis(ds_id: int, symbol: str, base_tf: str, tf: str, cfg_dict: dict, broker_dict: dict,
+                     target_r: float, expiry: int):
+    from edgelab.brokers import BrokerProfile
+    from edgelab.instruments import get_instrument
+    from edgelab.patterns import analyse
+
+    cfg = SessionConfig.from_dict(cfg_dict)
+    df = load_bars(ds_id)
+    m = timeframe_minutes(tf)
+    if tf != base_tf:
+        df = resample_ohlcv(df, m, cfg)
+    return analyse(df, cfg, get_instrument(symbol), m, BrokerProfile.from_dict(broker_dict), target_r, expiry)
+
+
+@st.cache_resource
+def get_scanner():
+    from edgelab.live.scanner import ScannerService
+
+    return ScannerService(db_path())

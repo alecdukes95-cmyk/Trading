@@ -10,9 +10,12 @@ from edgelab.learning.narrative import session_story
 from edgelab.timeutil import timeframe_minutes
 from edgelab.ui.charts import ChartOptions, build_chart
 from edgelab.ui.page_glossary import term_expanders
-from edgelab.ui.state import get_settings, get_store, indicator_frame, pick_dataset
+from edgelab.patterns.base import PATTERNS, TRADEABLE
+from edgelab.ui.state import get_settings, get_store, indicator_frame, pattern_analysis, pick_dataset
 
 OVERLAYS = {
+    "patterns": ("Detected patterns (click a triangle to explain it)", None),
+    "structure": ("Market structure labels (HH / HL / LH / LL)", "Market structure"),
     "sessions": ("Market sessions (Asia / London / New York)", "Session"),
     "vwap": ("VWAP", "VWAP"),
     "ema_fast": ("EMA 9", "Moving average"),
@@ -48,7 +51,8 @@ def render():
                         help=help_text("Timeframe"))
     daily = timeframe_minutes(tf) >= 1440
 
-    default_ov = ["ema_fast", "ema_slow", "sma_mid"] if daily else ["sessions", "vwap", "ema_fast", "ema_slow", "or", "pdhl"]
+    default_ov = ["patterns", "ema_fast", "ema_slow", "sma_mid"] if daily else \
+        ["patterns", "sessions", "vwap", "ema_fast", "ema_slow", "or", "pdhl"]
     ov_options = [k for k in OVERLAYS if not (daily and k in ("vwap", "or", "pdhl", "sessions"))]
     overlays = side.multiselect("Overlays", ov_options, default=[d for d in default_ov if d in ov_options],
                                 format_func=lambda k: OVERLAYS[k][0],
@@ -107,15 +111,51 @@ def render():
         if trades.empty:
             st.info("No imported trades for this symbol yet (Data -> Trade log).")
 
+    # ---- patterns
+    analysis, vis, offset = None, [], 0
+    if "patterns" in overlays or "structure" in overlays:
+        b = s.broker()
+        analysis = pattern_analysis(int(ds["id"]), ds["symbol"], ds["timeframe"], tf, cfg.to_dict(), b.to_dict(),
+                                    float(s.target_r), int(s.order_expiry_bars))
+        offset = int(analysis.ctx.df.index.get_indexer([view.index[0]])[0])
+        fams = sorted({PATTERNS[p].family for p in TRADEABLE})
+        show_fams = side.multiselect("Pattern families", fams, default=fams, help="Which kinds of pattern to mark.")
+        match_alerts = side.checkbox("Only patterns that match my alert rules", value=True,
+                                     help="Same filter as the live scanner: your chosen patterns, alert quality and "
+                                          "trading window (Settings -> Alerts). Untick to see every detection.")
+        if "patterns" in overlays:
+            from edgelab.live.alerts import passes_filters
+
+            vis = [sg for sg in analysis.signals if offset <= sg.i < offset + len(view)
+                   and PATTERNS[sg.pattern].family in show_fams
+                   and (not match_alerts or passes_filters(sg, analysis.ctx, s))]
+
     opts = ChartOptions(overlays=set(overlays), panels=panels, levels=levels, decimals=inst.decimals,
                         height=820 if len(panels) >= 2 else 700)
     title = f"{ds['symbol']} {tf}"
-    fig = build_chart(view, opts, tz=s.display_tz, title=title, daily=daily, trades=trades)
-    st.plotly_chart(fig, config={"scrollZoom": True, "displaylogo": False})
+    fig = build_chart(view, opts, tz=s.display_tz, title=title, daily=daily, trades=trades, signals=vis,
+                      swings=analysis.swings if analysis is not None and "structure" in overlays else None,
+                      offset=offset)
+    event = st.plotly_chart(fig, config={"scrollZoom": True, "displaylogo": False}, on_select="rerun",
+                            selection_mode="points", key=f"main_chart_{ds['id']}_{tf}")
+    clicked = None
+    try:
+        pts = event.selection.points if event else []
+        for ptn in pts:
+            cd = ptn.get("customdata")
+            if cd is not None:
+                clicked = int(cd[0] if isinstance(cd, (list, tuple)) else cd)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        clicked = None
     st.caption("Drag to pan, scroll to zoom, double-click to reset. Hover for values. Gaps such as the forex "
                "weekend are removed so candles sit side by side."
                + (" Shading: orange = Asia, blue = London, green = New York; where two overlap the colours mix."
                   if "sessions" in overlays and not daily else ""))
+
+    if vis:
+        _pattern_panel(vis, clicked, analysis, ds, inst, s, tf)
+    elif "patterns" in overlays:
+        st.caption("No patterns completed in this window - step to another day, or show more days.")
 
     # ---- explanations
     left, right = st.columns([3, 2])
@@ -127,7 +167,7 @@ def render():
                 st.markdown(f"**{story.headline}**")
                 for b in story.bullets:
                     st.markdown(f"- {b}")
-                st.caption("A description of the past, not a prediction. Pattern statistics arrive in Stage 2.")
+                st.caption("A description of the past, not a prediction.")
                 term_expanders(story.terms)
         else:
             _daily_summary(view, inst)
@@ -154,6 +194,38 @@ def render():
         if not daily and pd.notna(last.get("vwap")):
             rows["vs VWAP"] = inst.fmt_move(last["close"] - last["vwap"], last["close"])
         st.table(pd.DataFrame(rows, index=[""]).T)
+
+
+def _pattern_panel(vis, clicked, analysis, ds, inst, s, tf):
+    from edgelab.live.alerts import position_info
+    from edgelab.ui.explain import render_signal, stats_to_dict
+    from edgelab.ui.state import balance_summary, get_converter
+
+    st.subheader(f"Patterns in view ({len(vis)})")
+    labels = [f"{sg.ts.tz_convert(s.display_tz):%a %d %b %H:%M} - {sg.title}" for sg in vis]
+    key = f"pat_pick_{ds['id']}_{tf}"
+    if clicked is not None and 0 <= clicked < len(vis):
+        st.session_state[key] = labels[clicked]
+    if st.session_state.get(key) not in labels:
+        st.session_state[key] = labels[-1]
+    choice = st.selectbox("Explain this pattern (or click a triangle on the chart)", labels, key=key)
+    sig = vis[labels.index(choice)]
+    k = analysis.signals.index(sig)
+    outcome = analysis.outcomes[k]
+    stats = stats_to_dict(analysis.stats.get((sig.pattern, sig.direction)))
+    pos = position_info(sig, inst, s, balance_summary().balance, get_converter()) if sig.plan else None
+    render_signal(sig, analysis.ctx.df, inst, tz=s.display_tz, timeframe=tf, stats=stats,
+                  stats_source=ds["name"] + " (all of this dataset, in-sample)", is_synthetic=bool(ds["is_sample"]),
+                  position=pos, expiry_minutes=int(s.order_expiry_bars * timeframe_minutes(tf)), outcome=outcome,
+                  key=f"{ds['id']}_{tf}_{k}")
+    with st.expander("Scoreboard: every pattern on this dataset (in-sample, after costs)"):
+        from edgelab.patterns.stats import stats_frame
+
+        st.dataframe(stats_frame(analysis.stats), hide_index=True)
+        st.caption("Each row replays the same plan (stop entry, pattern stop, 2R target, conservative fills, spread "
+                   "and slippage charged) after every past occurrence. 'Avg R' is the average result per trade in "
+                   "multiples of the risk. If the 95% range includes zero, there is no evidence of an edge. This is "
+                   "in-sample and descriptive - Stage 4 adds proper out-of-sample backtests.")
 
 
 def _daily_summary(view: pd.DataFrame, inst):

@@ -41,6 +41,19 @@ CREATE TABLE IF NOT EXISTS balance_events (
     note TEXT,
     created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT,
+    mode TEXT,                   -- live or simulation
+    symbol TEXT,
+    timeframe TEXT,
+    pattern TEXT,
+    direction TEXT,
+    bar_ts INTEGER,
+    payload TEXT,                -- JSON: plan, reasons, cautions, levels, mini-chart bars, stats
+    seen INTEGER DEFAULT 0,
+    UNIQUE (mode, symbol, timeframe, pattern, direction, bar_ts)
+);
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -178,6 +191,52 @@ class Store:
             df["entry_time"] = from_epoch_seconds(df["entry_ts"])
             df["exit_time"] = from_epoch_seconds(df["exit_ts"])
         return df
+
+    # --------------------------------------------------------- alerts
+    def add_alert(self, mode: str, symbol: str, timeframe: str, pattern: str, direction: str, bar_ts: pd.Timestamp,
+                  payload: dict) -> int | None:
+        """Store an alert; returns its id, or None if this exact alert already exists."""
+        import json
+
+        with self._conn() as c:
+            cur = c.execute("INSERT OR IGNORE INTO alerts (created_at, mode, symbol, timeframe, pattern, direction, "
+                            "bar_ts, payload) VALUES (?,?,?,?,?,?,?,?)",
+                            (_now(), mode, symbol, timeframe, pattern, direction, int(to_epoch_seconds([bar_ts])[0]),
+                             json.dumps(payload, default=float)))
+            return int(cur.lastrowid) if cur.rowcount else None
+
+    def list_alerts(self, limit: int = 50, mode: str | None = None, unseen_only: bool = False) -> list[dict]:
+        import json
+
+        q, params = "SELECT * FROM alerts WHERE 1=1", []
+        if mode:
+            q += " AND mode = ?"
+            params.append(mode)
+        if unseen_only:
+            q += " AND seen = 0"
+        q += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        with self._conn() as c:
+            c.row_factory = sqlite3.Row
+            rows = [dict(r) for r in c.execute(q, params)]
+        for r in rows:
+            r["payload"] = json.loads(r["payload"])
+            r["bar_time"] = from_epoch_seconds([r["bar_ts"]])[0]
+        return rows
+
+    def mark_alerts_seen(self, ids=None) -> None:
+        with self._conn() as c:
+            if ids is None:
+                c.execute("UPDATE alerts SET seen = 1")
+            else:
+                c.executemany("UPDATE alerts SET seen = 1 WHERE id = ?", [(int(i),) for i in ids])
+
+    def clear_alerts(self, mode: str | None = None) -> None:
+        with self._conn() as c:
+            if mode:
+                c.execute("DELETE FROM alerts WHERE mode = ?", (mode,))
+            else:
+                c.execute("DELETE FROM alerts")
 
     # --------------------------------------------------------- balance events
     def add_balance_event(self, ts: pd.Timestamp, kind: str, amount: float, currency: str, note: str = "") -> int:

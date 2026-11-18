@@ -6,6 +6,15 @@ from edgelab.learning.glossary import CATEGORIES, GLOSSARY, search
 def render():
     st.title("Glossary")
     st.caption("Plain-English definitions. Each entry says what it is, why traders care, and the common trap.")
+    with st.expander("📐 Pattern library - every pattern the app detects", expanded=False):
+        from edgelab.patterns.base import PATTERNS
+
+        for p in PATTERNS.values():
+            if p.key == "bear_flag":
+                continue
+            st.markdown(f"**{p.name}** ({p.family}{', chart label ' + p.code if p.code else ''})  \n{p.what}  \n"
+                        f"*What traders infer:* {p.meaning}"
+                        + (f"  \n*Confirms:* {p.confirm}  \n*Invalidates:* {p.invalidate}" if p.confirm else ""))
     q = st.text_input("Search", placeholder="e.g. VWAP, spread, drawdown")
     hits = search(q)
     if not hits:

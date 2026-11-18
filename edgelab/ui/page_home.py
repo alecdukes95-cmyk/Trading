@@ -7,9 +7,10 @@ STAGES = [
     ("1. Data intake + chart reader", "ready", "Import CSV / download crypto, validation report, indicator charts, "
      "session shading, 'what happened today' explanations, glossary, GBP account with broker profiles and a "
      "position & margin calculator."),
-    ("2. Pattern detection + 'explain this'", "next", "Auto-annotated breakouts, failed breakouts, engulfing/pin bars, "
-     "VWAP reclaims, opening-range breaks, volume climaxes, structure - with stats from your data."),
-    ("3. Learning mode", "planned", "Bar-by-bar replay with scoring, quizzes from real charts, concept library, progress."),
+    ("2. Pattern detection + live alerts", "ready", "14 forex pairs. Breakouts, failed breakouts, flags, engulfing/pin "
+     "bars, VWAP reclaims/rejections, opening-range breaks, gap-and-go, volume climaxes, HH/HL structure. Click any "
+     "pattern to see the order idea, why it fired and its history on your data; the live scanner notifies you."),
+    ("3. Learning mode", "next", "Bar-by-bar replay with scoring, quizzes from real charts, concept library, progress."),
     ("4. Edge builder + backtester", "planned", "No-code rules, realistic costs, out-of-sample + walk-forward, "
      "overfitting warnings."),
     ("5. Monte Carlo engine", "planned", "Bootstrap, shuffling, parameter perturbation, risk of ruin, Kelly sizing."),
@@ -36,8 +37,10 @@ def render():
     st.subheader("Start here")
     st.markdown(
         """
-1. **Chart** - open a sample chart (EURUSD, GBPUSD, USDJPY, BTCUSD, ETHUSD). Turn indicators on and off and read the
-   *What happened today?* panel under the chart. Use **Previous day / Next day** to step through history.
+1. **Live signals** - start a *simulation* to see how pattern alerts work (or live scanning once your OANDA token
+   is set). Each alert gives the order idea, the size and risk in pounds, and an annotated chart showing why.
+   **Chart** - open any pair. Triangles mark patterns: click one for the explanation and its track record.
+   Read the *What happened today?* panel and use **Previous day / Next day** to step through history.
 2. **Position & margin** - see what 1 mini lot means in pounds: pip value, required and free margin, costs,
    and whether a stop fits your risk-per-trade rule.
 3. **Glossary** - every term used in the app, in plain English. Most widgets also have a **?** tooltip.

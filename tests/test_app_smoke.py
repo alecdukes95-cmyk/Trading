@@ -4,11 +4,16 @@ import pytest
 from edgelab.data.sample import generate_bars
 from edgelab.data.store import Store
 
-PAGES = ["page_home", "page_chart", "page_position", "page_data", "page_glossary", "page_settings"]
+PAGES = ["page_home", "page_signals", "page_chart", "page_position", "page_data", "page_glossary", "page_settings"]
 
 
 @pytest.fixture
-def small_home(tmp_home):
+def small_home(tmp_home, monkeypatch):
+    import streamlit as stl
+
+    stl.cache_resource.clear()   # cached Store/scanner from a previous test point at another folder
+    stl.cache_data.clear()
+    monkeypatch.setenv("EDGELAB_SAMPLE_SYMBOLS", "EURUSD,BTCUSD")
     # Pre-seed a small sample so the test doesn't generate a full year of data
     from edgelab.config import db_path
 
@@ -56,7 +61,7 @@ def test_position_page_interactions(small_home):
     at.run()
     assert not at.exception
     assert any("Required margin" in m.label for m in at.metric)
-    for sym in ("USDJPY", "GBPUSD", "BTCUSD"):
+    for sym in ("USDJPY", "GBPUSD", "USDCAD", "EURGBP"):
         at.selectbox[0].set_value(sym).run()
         assert not at.exception, sym
 
@@ -72,3 +77,23 @@ def test_settings_broker_switch(small_home):
     from edgelab.config import load_settings
 
     assert load_settings().active_broker == "IG"
+
+
+def test_signals_page_shows_simulated_alerts(small_home):
+    import time
+
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, save_settings
+    from edgelab.live.scanner import ScannerService
+
+    save_settings(Settings(watchlist=["EURUSD"], scan_timeframes=["15m"], notify_desktop=False, alert_quality="all"))
+    sc = ScannerService()
+    sc.start("simulation", sim_days=3, sim_seconds=0.0)
+    while sc.status.running:
+        time.sleep(0.2)
+    assert sc.status.alerts > 0
+    at = AppTest.from_string("from edgelab.ui import page_signals\npage_signals.render()", default_timeout=90)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("SIMULATION" in e.label for e in at.expander)

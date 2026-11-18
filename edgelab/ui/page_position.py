@@ -21,7 +21,7 @@ def render():
                f"| broker: **{b.name}** (change in Settings). Calculations only - nothing is sent anywhere.")
 
     c1, c2, c3 = st.columns(3)
-    syms = list(INSTRUMENTS)
+    syms = [k for k, v in INSTRUMENTS.items() if s.show_crypto or v.asset_class == "forex"]
     sym = c1.selectbox("Instrument", syms, index=0)
     inst = get_instrument(sym)
     ref_price = _latest_price(conv, inst)

@@ -42,7 +42,8 @@ def _labels(idx: pd.DatetimeIndex, tz: str, daily: bool) -> list[str]:
 
 
 def build_chart(df: pd.DataFrame, opts: ChartOptions, tz: str = "UTC", title: str = "", daily: bool = False,
-                trades: pd.DataFrame | None = None, markers: pd.DataFrame | None = None) -> go.Figure:
+                trades: pd.DataFrame | None = None, markers: pd.DataFrame | None = None, signals: list | None = None,
+                swings: list | None = None, offset: int = 0) -> go.Figure:
     """df: indicator frame (see analysis.add_indicators). Uses a category x-axis so gaps (weekends) vanish."""
     panels = [p for p in opts.panels if p in ("volume", "rsi", "macd", "atr")]
     if "volume" in panels and df["volume"].fillna(0).sum() == 0:
@@ -132,6 +133,11 @@ def build_chart(df: pd.DataFrame, opts: ChartOptions, tz: str = "UTC", title: st
                                              size=11, color=markers.loc[ok, "color"] if "color" in markers else "#000"),
                                  name="Markers", hoverinfo="text"), row=1, col=1)
 
+    if swings:
+        add_swing_labels(fig, df, x, swings, offset)
+    if signals:
+        add_signal_markers(fig, df, x, signals, offset)
+
     r = 2
     for p in panels:
         if p == "volume":
@@ -187,3 +193,121 @@ def _add_trades(fig, df, x, trades):
         fig.add_trace(go.Scatter(x=[x[i] for i in pos], y=t[pcol], mode="markers", name=f"Trade {kind}s",
                                  marker=dict(symbol=sym, size=12, color=col, line=dict(width=1, color="white")),
                                  hovertext=hover, hoverinfo="text"), row=1, col=1)
+
+
+# =============================================================================== pattern visuals
+LONG_C, SHORT_C, NEUTRAL_C = "#1b5e20", "#b71c1c", "#546e7a"
+
+
+def add_signal_markers(fig, df: pd.DataFrame, x: list, signals: list, offset: int = 0) -> None:
+    """Triangles under/over the bars where patterns completed. customdata = index in `signals`."""
+    if not signals:
+        return
+    from edgelab.patterns.base import PATTERNS
+
+    for direction, sym, col in (("long", "triangle-up", LONG_C), ("short", "triangle-down", SHORT_C)):
+        pts = [(k, s) for k, s in enumerate(signals) if s.direction == direction and 0 <= s.i - offset < len(df)]
+        if not pts:
+            continue
+        rng = (df["high"] - df["low"]).median()
+        xs = [x[s.i - offset] for _, s in pts]
+        ys = [(df["low"].iloc[s.i - offset] - 1.2 * rng) if direction == "long" else
+              (df["high"].iloc[s.i - offset] + 1.2 * rng) for _, s in pts]
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="markers+text", name=f"{'Bullish' if direction == 'long' else 'Bearish'} patterns",
+            marker=dict(symbol=sym, size=13, color=col, line=dict(width=1, color="white")),
+            text=[PATTERNS[s.pattern].code for _, s in pts],
+            textposition="bottom center" if direction == "long" else "top center",
+            textfont=dict(size=9, color=col), customdata=[k for k, _ in pts],
+            hovertext=[f"{s.title}<br>{s.plan.order_type} {s.plan.entry} | SL {s.plan.stop} | TP {s.plan.target}"
+                       if s.plan else s.title for _, s in pts], hoverinfo="text"), row=1, col=1)
+
+
+def add_swing_labels(fig, df: pd.DataFrame, x: list, swings: list, offset: int = 0) -> None:
+    pts = [(p, price, lab) for p, _, price, lab in swings if 0 <= p - offset < len(df) and lab in ("HH", "HL", "LH", "LL")]
+    if not pts:
+        return
+    colors = {"HH": LONG_C, "HL": LONG_C, "LH": SHORT_C, "LL": SHORT_C}
+    fig.add_trace(go.Scatter(
+        x=[x[p - offset] for p, _, _ in pts], y=[price for _, price, _ in pts], mode="text",
+        text=[lab for _, _, lab in pts], textposition=["top center" if lab in ("HH", "LH") else "bottom center"
+                                                       for _, _, lab in pts],
+        textfont=dict(size=10, color=[colors[lab] for _, _, lab in pts]), name="Market structure",
+        hoverinfo="skip"), row=1, col=1)
+
+
+def signal_figure(df: pd.DataFrame, sig, tz: str, decimals: int, before: int = 50, after: int = 0,
+                  future_slots: int = 14, height: int = 520, title: str = "") -> go.Figure:
+    """Annotated chart of one signal: the pattern, its levels and the plan (entry / stop / target zones).
+
+    after = how many real bars after the signal to show (0 for a live alert - the future is unknown).
+    """
+    i0 = max(0, min(sig.i - before, (sig.zone[0] - 10) if sig.zone else sig.i - before))
+    for p, _, _ in sig.points:
+        i0 = max(0, min(i0, p - 5))
+    i1 = min(len(df) - 1, sig.i + after)
+    view = df.iloc[i0:i1 + 1]
+    x = _labels(view.index, tz, daily=False)
+    n_future = max(0, future_slots - (i1 - sig.i))
+    fut = [f"+{k}" for k in range(1, n_future + 1)]
+    xa = x + fut
+    fmt = f".{decimals}f"
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=x, open=view["open"], high=view["high"], low=view["low"], close=view["close"],
+                                 increasing_line_color=UP, decreasing_line_color=DOWN, increasing_fillcolor=UP,
+                                 decreasing_fillcolor=DOWN, name="Price", showlegend=False))
+    if fut:
+        fig.add_trace(go.Scatter(x=fut, y=[view["close"].iloc[-1]] * len(fut), mode="markers",
+                                 marker=dict(opacity=0), showlegend=False, hoverinfo="skip"))
+    if "vwap" in view and view["vwap"].notna().any():
+        fig.add_trace(go.Scatter(x=x, y=view["vwap"], name="VWAP", line=dict(color=COLORS["vwap"], width=1.5)))
+    for col, nm, cl in (("ema9", "EMA 9", COLORS["ema_fast"]), ("ema20", "EMA 20", COLORS["ema_slow"])):
+        if col in view:
+            fig.add_trace(go.Scatter(x=x, y=view[col], name=nm, line=dict(color=cl, width=1), opacity=0.7))
+
+    k = sig.i - i0
+    col = LONG_C if sig.direction == "long" else SHORT_C if sig.direction == "short" else NEUTRAL_C
+    # highlight the signal candle
+    fig.add_vrect(x0=x[max(0, k - 0)], x1=x[k], fillcolor=col, opacity=0.15, line=dict(color=col, width=1))
+    fig.add_annotation(x=x[k], y=view["high"].iloc[k] if sig.direction == "short" else view["low"].iloc[k],
+                       text="signal bar", showarrow=True, arrowhead=2, arrowcolor=col, font=dict(color=col, size=11),
+                       ay=-40 if sig.direction == "short" else 40)
+    # pattern zone (flag, box, engulfing pair)
+    if sig.zone:
+        a, b, lo, hi = sig.zone
+        if b - i0 >= 0:
+            fig.add_shape(type="rect", x0=x[max(0, a - i0)], x1=x[max(0, b - i0)], y0=lo, y1=hi,
+                          line=dict(color="#6a1b9a", width=1.5, dash="dot"), fillcolor="rgba(106,27,154,0.08)")
+    for p, price, lab in sig.points:
+        if 0 <= p - i0 < len(x):
+            fig.add_annotation(x=x[p - i0], y=price, text=lab, showarrow=True, arrowhead=1, font=dict(size=10),
+                               ay=-25, arrowcolor="#6a1b9a")
+    if len(sig.points) >= 2 and sig.pattern in ("bull_flag", "bear_flag"):
+        (a, pa, _), (b, pb, _) = sig.points[:2]
+        fig.add_shape(type="line", x0=x[a - i0], y0=pa, x1=x[b - i0], y1=pb, line=dict(color="#6a1b9a", width=3))
+    for lab, price in sig.levels.items():
+        fig.add_shape(type="line", x0=xa[0], x1=xa[-1], y0=price, y1=price,
+                      line=dict(color="#455a64", width=1.2, dash="dash"))
+        fig.add_annotation(x=xa[0], y=price, text=f"{lab} {price:{fmt}}", showarrow=False, xanchor="left",
+                           yanchor="bottom", font=dict(size=10, color="#455a64"))
+    # trade plan: entry / stop / target with risk (red) and reward (green) boxes to the right
+    p = sig.plan
+    if p:
+        xs, xe = x[k], xa[-1]
+        fig.add_shape(type="rect", x0=xs, x1=xe, y0=min(p.entry, p.stop), y1=max(p.entry, p.stop),
+                      fillcolor="rgba(198,40,40,0.15)", line_width=0)
+        fig.add_shape(type="rect", x0=xs, x1=xe, y0=min(p.entry, p.target), y1=max(p.entry, p.target),
+                      fillcolor="rgba(46,125,50,0.15)", line_width=0)
+        for price, lab, cl in ((p.entry, f"{p.order_type} {p.entry:{fmt}}", "#0d47a1"),
+                               (p.stop, f"STOP-LOSS {p.stop:{fmt}}", "#c62828"),
+                               (p.target, f"TAKE-PROFIT {p.target:{fmt}} ({p.target_r:g}R)", "#2e7d32")):
+            fig.add_shape(type="line", x0=xs, x1=xe, y0=price, y1=price, line=dict(color=cl, width=2))
+            fig.add_annotation(x=xe, y=price, text=lab, showarrow=False, xanchor="right", yanchor="bottom",
+                               font=dict(size=11, color=cl))
+    fig.update_xaxes(type="category", nticks=10, showgrid=False, rangeslider_visible=False,
+                     categoryorder="array", categoryarray=xa)
+    fig.update_yaxes(tickformat=fmt, side="right")
+    fig.update_layout(height=height, margin=dict(l=10, r=10, t=40 if title else 10, b=10), title=title,
+                      hovermode="x unified", showlegend=True, dragmode="pan",
+                      legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0, font_size=10))
+    return fig

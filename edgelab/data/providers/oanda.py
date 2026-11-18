@@ -22,7 +22,8 @@ STEP = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "
 MAX_COUNT = 5000
 INSTRUMENTS = {"EURUSD": "EUR_USD", "GBPUSD": "GBP_USD", "USDJPY": "USD_JPY", "EURGBP": "EUR_GBP",
                "GBPJPY": "GBP_JPY", "AUDUSD": "AUD_USD", "USDCAD": "USD_CAD", "USDCHF": "USD_CHF",
-               "EURJPY": "EUR_JPY", "GBPCHF": "GBP_CHF"}
+               "EURJPY": "EUR_JPY", "GBPCHF": "GBP_CHF", "NZDUSD": "NZD_USD", "EURCHF": "EUR_CHF",
+               "AUDJPY": "AUD_JPY", "EURAUD": "EUR_AUD"}
 
 
 class OandaError(RuntimeError):

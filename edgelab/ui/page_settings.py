@@ -22,9 +22,12 @@ def render():
     s = get_settings()
     st.title("Settings")
     st.caption("Saved to userdata/settings.json on this computer. API keys go in the .env file, never here.")
-    t1, t2, t3, t4 = st.tabs(["💷 Account & risk", "🏦 Broker", "💱 Exchange rates", "🕒 Sessions & time"])
+    t1, t5, t2, t3, t4 = st.tabs(["💷 Account & risk", "🔔 Alerts", "🏦 Broker", "💱 Exchange rates",
+                                  "🕒 Sessions & time"])
     with t1:
         _account(s)
+    with t5:
+        _alerts(s)
     with t2:
         _broker(s)
     with t3:
@@ -167,6 +170,52 @@ def _balance(s):
             if c2.button("Delete entry"):
                 store.delete_balance_event(int(victim))
                 st.rerun()
+
+
+# ----------------------------------------------------------------------------------- alerts
+def _alerts(s):
+    from edgelab.instruments import FOREX_SYMBOLS
+    from edgelab.patterns.base import PATTERNS, TRADEABLE
+
+    st.markdown("Which markets to watch and when to alert you. Alerts are educational order ideas - EdgeLab never "
+                "places orders.")
+    with st.form("alerts_form"):
+        wl = st.multiselect("Watchlist (forex pairs)", FOREX_SYMBOLS, default=[x for x in s.watchlist if x in FOREX_SYMBOLS])
+        tfs = st.multiselect("Timeframes to scan", ["5m", "15m", "1h"], default=s.scan_timeframes,
+                             help="5m gives many more (noisier) alerts; 15m is a calmer default.")
+        keys = [k for k in TRADEABLE if k not in ("bear_flag",)]
+        names = {k: PATTERNS[k].name.replace("Bull flag", "Bull / bear flags") for k in keys}
+        cur = s.enabled_patterns or keys
+        pats = st.multiselect("Patterns that trigger alerts", keys, default=[k for k in cur if k in keys],
+                              format_func=names.get)
+        q = st.radio("Alert quality", ["strict", "normal", "all"], index=["strict", "normal", "all"].index(s.alert_quality),
+                     horizontal=True, format_func={"strict": "Strict - only signals with no warning flags",
+                                                   "normal": "Normal - at most one warning flag",
+                                                   "all": "All signals"}.get)
+        c1, c2, c3 = st.columns(3)
+        only_win = c1.checkbox("Only during my trading window", value=s.notify_only_in_window)
+        desk = c2.checkbox("Desktop notifications (Windows pop-up)", value=s.notify_desktop)
+        snd = c3.checkbox("Sound in the browser", value=s.notify_sound)
+        c1, c2 = st.columns(2)
+        tr = c1.number_input("Take-profit at (R multiples of the risk)", 0.5, 10.0, float(s.target_r), 0.5,
+                             help=help_text("R-multiple"))
+        ex = c2.number_input("Cancel an unfilled entry after (bars)", 1, 20, int(s.order_expiry_bars))
+        if st.form_submit_button("Save", type="primary"):
+            if "bull_flag" in pats:
+                pats = pats + ["bear_flag"]
+            s.watchlist, s.scan_timeframes = wl or s.watchlist, tfs or ["15m"]
+            s.enabled_patterns = [] if set(pats) >= set(TRADEABLE) else pats
+            s.alert_quality, s.notify_only_in_window, s.notify_desktop, s.notify_sound = q, only_win, desk, snd
+            s.target_r, s.order_expiry_bars = float(tr), int(ex)
+            update_settings(s)
+            st.success("Saved. Restart the scanner for changes to take effect.")
+    if st.button("Send a test desktop notification"):
+        from edgelab.live.notify import desktop_notify
+
+        ok = desktop_notify("EdgeLab test", "If you can read this, desktop alerts work.")
+        (st.success if ok else st.warning)("Sent - check your screen's corner." if ok else
+                                           "Desktop notifications aren't available on this computer; alerts will "
+                                           "still appear in the app.")
 
 
 # ----------------------------------------------------------------------------------- broker

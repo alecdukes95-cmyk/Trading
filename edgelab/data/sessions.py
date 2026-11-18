@@ -127,20 +127,25 @@ def session_membership(ts) -> pd.DataFrame:
     return pd.DataFrame(out, index=idx)
 
 
+def _label_for(code: int) -> str:
+    names = [n for bit, n in enumerate(("Asia", "London", "New York")) if code & (1 << bit)]
+    if not names:
+        return "outside the main sessions"
+    return f"{names[0]} session" if len(names) == 1 else "/".join(names) + " overlap"
+
+
+SESSION_CODE_LABELS = [_label_for(c) for c in range(8)]
+
+
+def session_codes(ts) -> np.ndarray:
+    """Bitmask per bar: 1 = Asia, 2 = London, 4 = New York (vectorised)."""
+    m = session_membership(ts).to_numpy()
+    return (m * np.array([1, 2, 4])).sum(axis=1).astype(int)
+
+
 def session_label(ts) -> list[str]:
-    """Human label for each bar: e.g. 'London/New York overlap', 'Asia/London overlap', 'Asia only'."""
-    m = session_membership(ts)
-    short = {"Asia (Tokyo)": "Asia", "London": "London", "New York": "New York"}
-    labels = []
-    for row in m.itertuples(index=False):
-        active = [short[n] for n, on in zip(m.columns, row) if on]
-        if not active:
-            labels.append("outside the main sessions")
-        elif len(active) == 1:
-            labels.append(f"{active[0]} session")
-        else:
-            labels.append("/".join(active) + " overlap")
-    return labels
+    """Human label for each bar: e.g. 'London/New York overlap', 'Asia/London overlap', 'London session'."""
+    return [SESSION_CODE_LABELS[c] for c in session_codes(ts)]
 
 
 def session_times_today(tz: str = "Europe/London", day: pd.Timestamp | None = None) -> dict[str, tuple[str, str]]:
