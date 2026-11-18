@@ -1,7 +1,7 @@
 """EdgeLab - start with:  streamlit run app.py   (or double-click run.bat on Windows)."""
 import streamlit as st
 
-from edgelab.ui import page_chart, page_data, page_glossary, page_home, page_backtest, page_concepts, page_edge, page_learn, page_paper, page_position, page_settings, page_signals
+from edgelab.ui import page_chart, page_data, page_glossary, page_home, page_journal, page_backtest, page_concepts, page_edge, page_learn, page_paper, page_position, page_settings, page_signals
 from edgelab.ui.state import ensure_samples
 
 st.set_page_config(page_title="EdgeLab", page_icon="📈", layout="wide")
@@ -11,6 +11,7 @@ pages = [
     st.Page(page_home.render, title="Start here", icon="🏠", url_path="home", default=True),
     st.Page(page_signals.render, title="Live signals", icon="🔔", url_path="signals"),
     st.Page(page_paper.render, title="Paper trading", icon="🧾", url_path="paper"),
+    st.Page(page_journal.render, title="Trade journal", icon="📒", url_path="journal"),
     st.Page(page_chart.render, title="Chart", icon="📈", url_path="chart"),
     st.Page(page_edge.render, title="Edge builder", icon="🛠️", url_path="edge"),
     st.Page(page_backtest.render, title="Backtests & Monte Carlo", icon="🎲", url_path="backtest"),

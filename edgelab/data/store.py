@@ -73,6 +73,13 @@ CREATE TABLE IF NOT EXISTS strategy_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, data_key TEXT, strategy_hash TEXT, strategy_name TEXT,
     kind TEXT, trades INTEGER, expectancy REAL, t_stat REAL, oos_expectancy REAL
 );
+CREATE TABLE IF NOT EXISTS journal (
+    trade_id INTEGER PRIMARY KEY, tags TEXT, emotion TEXT, followed TEXT, grade TEXT, mistakes TEXT, lesson TEXT,
+    notes TEXT, planned_target REAL, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, trade_id INTEGER, path TEXT, caption TEXT, created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -341,6 +348,88 @@ class Store:
     def delete_balance_event(self, event_id: int) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM balance_events WHERE id = ?", (event_id,))
+
+    def add_trade(self, row: dict, source: str) -> int:
+        """Insert one trade (entry_time/exit_time as timestamps) and return its id."""
+        r = dict(row)
+        r["source"] = source
+        r["entry_ts"] = int(to_epoch_seconds([r.pop("entry_time")])[0])
+        r["exit_ts"] = int(to_epoch_seconds([r.pop("exit_time")])[0])
+        cols = [c for c in TRADE_COLUMNS if c in r]
+        vals = [None if (isinstance(r[c], float) and r[c] != r[c]) else r[c] for c in cols]
+        with self._conn() as c:
+            cur = c.execute(f"INSERT INTO trades ({', '.join(cols)}, imported_at) VALUES ({', '.join('?' * len(cols))}, ?)",
+                            vals + [_now()])
+            return int(cur.lastrowid)
+
+    def delete_trade(self, trade_id: int) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
+            c.execute("DELETE FROM journal WHERE trade_id = ?", (trade_id,))
+            c.execute("DELETE FROM attachments WHERE trade_id = ?", (trade_id,))
+
+    # --------------------------------------------------------- journal
+    JOURNAL_FIELDS = ("tags", "emotion", "followed", "grade", "mistakes", "lesson", "notes", "planned_target")
+
+    def journal_upsert(self, trade_id: int, **fields) -> None:
+        import json
+
+        cur = self.journal_get(trade_id) or {}
+        cur.update({k: v for k, v in fields.items() if k in self.JOURNAL_FIELDS})
+        tags = cur.get("tags") or []
+        mistakes = cur.get("mistakes") or []
+        with self._conn() as c:
+            c.execute("INSERT OR REPLACE INTO journal (trade_id, tags, emotion, followed, grade, mistakes, lesson, notes, "
+                      "planned_target, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      (trade_id, json.dumps(list(tags)), cur.get("emotion"), cur.get("followed"), cur.get("grade"),
+                       json.dumps(list(mistakes)), cur.get("lesson"), cur.get("notes"), cur.get("planned_target"), _now()))
+
+    def journal_get(self, trade_id: int) -> dict | None:
+        import json
+
+        with self._conn() as c:
+            c.row_factory = sqlite3.Row
+            r = c.execute("SELECT * FROM journal WHERE trade_id = ?", (trade_id,)).fetchone()
+        if r is None:
+            return None
+        d = dict(r)
+        d["tags"] = json.loads(d["tags"] or "[]")
+        d["mistakes"] = json.loads(d["mistakes"] or "[]")
+        return d
+
+    def journal_frame(self) -> pd.DataFrame:
+        """Every trade with its journal fields (tags/mistakes as lists)."""
+        import json
+
+        t = self.load_trades()
+        with self._conn() as c:
+            j = pd.read_sql_query("SELECT * FROM journal", c)
+        if t.empty:
+            return t
+        if j.empty:
+            j = pd.DataFrame(columns=["trade_id", *self.JOURNAL_FIELDS])
+        out = t.merge(j.drop(columns=["updated_at"], errors="ignore"), left_on="id", right_on="trade_id", how="left",
+                      suffixes=("", "_j"))
+        for col in ("tags", "mistakes"):
+            out[col] = out[col].map(lambda v: json.loads(v) if isinstance(v, str) and v else [])
+        if "notes_j" in out:
+            out["journal_notes"] = out.pop("notes_j")
+        return out
+
+    def add_attachment(self, trade_id: int, path: str, caption: str = "") -> int:
+        with self._conn() as c:
+            cur = c.execute("INSERT INTO attachments (trade_id, path, caption, created_at) VALUES (?,?,?,?)",
+                            (trade_id, path, caption, _now()))
+            return int(cur.lastrowid)
+
+    def attachments(self, trade_id: int) -> list[dict]:
+        with self._conn() as c:
+            c.row_factory = sqlite3.Row
+            return [dict(r) for r in c.execute("SELECT * FROM attachments WHERE trade_id = ? ORDER BY id", (trade_id,))]
+
+    def delete_attachment(self, att_id: int) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM attachments WHERE id = ?", (att_id,))
 
     def delete_trades(self, source: str | None = None) -> None:
         with self._conn() as c:

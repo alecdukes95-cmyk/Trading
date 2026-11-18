@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS paper_orders (
 CREATE TABLE IF NOT EXISTS paper_positions (
     id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, symbol TEXT, side TEXT, units REAL, open_ts TEXT,
     open_price REAL, sl REAL, tp REAL, initial_sl REAL, status TEXT, close_ts TEXT, close_price REAL,
-    close_reason TEXT, pnl REAL, r REAL, fees REAL, best REAL, worst REAL, plan TEXT, review TEXT, events TEXT
+    close_reason TEXT, pnl REAL, r REAL, fees REAL, best REAL, worst REAL, plan TEXT, review TEXT, events TEXT,
+    trade_id INTEGER
 );
 """
 
@@ -69,6 +70,9 @@ class PaperBook:
         self.trade_store = trade_store        # edgelab Store, to write closed trades into the trade log
         with self._conn() as c:
             c.executescript(SCHEMA)
+            cols = {r[1] for r in c.execute("PRAGMA table_info(paper_positions)")}
+            if "trade_id" not in cols:
+                c.execute("ALTER TABLE paper_positions ADD COLUMN trade_id INTEGER")
         if self.meta("start_balance") is None:
             self.reset(10_000.0, "GBP")
 
@@ -311,11 +315,16 @@ class PaperBook:
                       "pnl = ?, r = ?, fees = ?, events = ? WHERE id = ?",
                       (_ts(now), float(price), reason, pnl, r, fees, json.dumps(events), pid))
         if self.trade_store is not None:
-            self.trade_store.save_trades(pd.DataFrame([{
+            tid = self.trade_store.add_trade({
                 "symbol": p["symbol"], "side": p["side"], "entry_time": pd.Timestamp(p["open_ts"]),
                 "exit_time": pd.Timestamp(_ts(now)), "entry_price": p["open_price"], "exit_price": float(price),
                 "size": p["units"], "fees": fees, "stop_price": p["initial_sl"], "setup": p["plan"].get("setup", ""),
-                "notes": p["plan"].get("why", ""), "pnl": pnl, "r_multiple": r, "pnl_currency": env.ccy}]), "paper")
+                "notes": p["plan"].get("why", ""), "pnl": pnl, "r_multiple": r, "pnl_currency": env.ccy}, "paper")
+            plan = p["plan"] or {}
+            self.trade_store.journal_upsert(tid, tags=[plan["setup"]] if plan.get("setup") else [],
+                                            emotion=plan.get("emotion"), notes=plan.get("why"), planned_target=p["tp"])
+            with self._conn() as c:
+                c.execute("UPDATE paper_positions SET trade_id = ? WHERE id = ?", (tid, pid))
         return {"id": pid, "symbol": p["symbol"], "side": p["side"], "pnl": pnl, "r": r, "reason": reason,
                 "price": price, "pips": (price - p["open_price"]) * d / inst.pip}
 
@@ -330,6 +339,11 @@ class PaperBook:
     def save_review(self, pid: int, review: dict) -> None:
         with self._conn() as c:
             c.execute("UPDATE paper_positions SET review = ? WHERE id = ?", (json.dumps(review), pid))
+        p = self.position(pid)
+        if self.trade_store is not None and p and p.get("trade_id"):
+            self.trade_store.journal_upsert(int(p["trade_id"]), followed=review.get("followed"),
+                                            grade=review.get("grade"), mistakes=review.get("mistakes", []),
+                                            lesson=review.get("lesson"))
 
     # ------------------------------------------------------------------ the heart: process a new quote
     def on_price(self, symbol: str, bid: float, ask: float, now, env: Env, all_quotes: dict | None = None) -> list[dict]:

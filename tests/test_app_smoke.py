@@ -312,3 +312,31 @@ def test_edge_builder_page_full_flow(small_home):
     next(b for b in at.button if "Save current rules" in b.label).click().run()
     assert "RSI reversal (fade)" in Store(db_path()).list_strategies()
     assert Store(db_path()).runs()["strategy_hash"].nunique() >= 4
+
+
+def test_journal_page_log_review_and_insights(small_home):
+    from streamlit.testing.v1 import AppTest
+
+    from edgelab.config import Settings, db_path, save_settings
+    from edgelab.data.store import Store
+
+    save_settings(Settings(watchlist=["EURUSD"]))
+    at = AppTest.from_string("from edgelab.ui import page_journal\npage_journal.render()", default_timeout=120)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    for k in range(6):   # log six trades by hand through the form (fill in, then submit in the same run)
+        next(n for n in at.number_input if n.label == "Exit price").set_value(1.0855 + (0.001 if k % 2 else -0.0005))
+        next(n for n in at.number_input if n.label.startswith("Initial stop")).set_value(1.0840)
+        next(b for b in at.button if b.label == "Save trade").click().run()
+        assert not at.exception, [e.value for e in at.exception]
+    st_ = Store(db_path())
+    t = st_.load_trades()
+    assert len(t) == 6 and t["r_multiple"].notna().all() and (t["source"] == "manual").all()
+    at.run()
+    next(b for b in at.button if b.label == "Save journal entry").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert st_.journal_get(int(st_.load_trades()["id"].iloc[-1])) is not None
+    next(b for b in at.button if b.label == "Compare with backtests").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    next(b for b in at.button if "Run Monte Carlo on my trades" in b.label).click().run()
+    assert not at.exception, [e.value for e in at.exception]
