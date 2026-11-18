@@ -1,72 +1,92 @@
 import streamlit as st
 
 from edgelab.ui.page_settings import money
-from edgelab.ui.state import balance_summary, datasets, get_settings
+from edgelab.ui.state import balance_summary, datasets, get_settings, get_store
 
 STAGES = [
-    ("1. Data intake + chart reader", "ready", "Import CSV / download crypto, validation report, indicator charts, "
-     "session shading, 'what happened today' explanations, glossary, GBP account with broker profiles and a "
-     "position & margin calculator."),
-    ("2. Pattern detection + live alerts", "ready", "14 forex pairs. Breakouts, failed breakouts, flags, engulfing/pin "
-     "bars, VWAP reclaims/rejections, opening-range breaks, gap-and-go, volume climaxes, HH/HL structure. Click any "
-     "pattern to see the order idea, why it fired and its history on your data; the live scanner notifies you."),
-    ("3. Learning mode", "next", "In progress. Ready: the replay trainer (Learn page) and PAPER TRADING against live "
-     "prices with a pre-trade plan, discipline checks, journal reviews and behaviour stats. Next: quizzes from "
-     "real charts and a concept library."),
-    ("4. Edge builder + backtester", "planned", "No-code rules, realistic costs, out-of-sample + walk-forward, "
-     "overfitting warnings."),
-    ("5. Monte Carlo engine", "ready", "Backtests & Monte Carlo page plus a Monte Carlo button on every alert and "
-     "pattern: bootstrap, shuffle, parameter uncertainty, risk of ruin, drawdowns, Kelly sizing, edge test."),
-    ("6. Trade journal", "planned", "Log trades with notes/screenshots, tag setups, feed results back in."),
+    ("1. Data intake + chart reader", "Free data (Dukascopy, MT5, OANDA practice, CSV/HistData) with plain-English "
+     "checks; charts with VWAP, MAs, ATR, RSI, MACD, opening range, prior-day levels, S/R, sessions; 'what happened "
+     "today'; GBP account, broker profiles, position & margin calculator."),
+    ("2. Patterns + live alerts", "14 detectors on completed bars; click any pattern for the order idea, the visual "
+     "cues and its history on your data; live scanner with desktop notifications."),
+    ("3. Learning mode", "Replay trainer, chart quizzes, concepts library, paper trading against live prices with a "
+     "pre-trade plan and discipline checks, progress tracking."),
+    ("4. Edge builder + backtester", "No-code rules, realistic costs, in- vs out-of-sample, walk-forward, robustness "
+     "grid, overfitting check against the number of variations tried."),
+    ("5. Monte Carlo engine", "Bootstrap, shuffle, parameter uncertainty; risk of ruin, drawdowns, streaks, recovery, "
+     "Kelly sizing, zero-edge reality check - on backtests, alerts, paper trades and your journal."),
+    ("6. Trade journal", "Every trade with tags, emotions, grades, mistakes, lessons and screenshots; insights, P&L "
+     "calendar, execution gap vs the rules."),
 ]
+
+
+def setup_checks(s) -> list[tuple[bool, str, str]]:
+    """(done, item, where to fix it) - the inputs only you can give."""
+    from edgelab.config import api_key
+
+    store = get_store()
+    ds = datasets()
+    real = not ds.empty and (ds["is_sample"] == 0).any()
+    ev = store.load_balance_events()
+    balance_set = not ev.empty and (ev["note"].fillna("").str.startswith("Starting balance (default") == False).any()  # noqa: E712
+    edited = s.active_broker in s.brokers
+    return [
+        (bool(api_key("OANDA_API_KEY")), "OANDA practice token in .env (live prices, scanner, paper trading)",
+         "Data -> OANDA"),
+        (balance_set, "Your real account balance entered or synced", "Settings -> Account"),
+        (real, "Real price history downloaded (instead of synthetic samples)", "Data -> Free history"),
+        (edited, f"Your broker's real spreads/commission in the '{s.active_broker}' profile (placeholders otherwise)",
+         "Settings -> Broker, or Data -> OANDA 'measure the real spread'"),
+        (s.risk_pct == 0.65 and s.forex_fixed_units == 10_000, "Risk 0.65% per trade and 1 mini lot (your stated rules)",
+         "Settings -> Account"),
+    ]
 
 
 def render():
     st.title("EdgeLab")
     st.caption("Learn to read charts, test trading ideas honestly, and understand risk. Educational tool only - "
                "it never places trades.")
-
     s = get_settings()
     ds = datasets()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Datasets loaded", len(ds))
-    c2.metric("Your own datasets", int((ds["is_sample"] == 0).sum()) if not ds.empty else 0)
     bal = balance_summary().balance
-    c3.metric("Risk per trade", f"{s.risk_pct:.2f}% ({money(bal * s.risk_pct / 100, s.account_currency)})")
-    st.caption(f"Balance: {money(bal, s.account_currency)} | broker profile: {s.broker().name} | "
-               f"forex size: {s.forex_fixed_units:,} units ({s.forex_fixed_units / 100_000:.2f} lots) | "
-               f"times in {s.display_tz}. Change these under Settings.")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Balance", money(bal, s.account_currency))
+    c2.metric("Risk per trade", f"{s.risk_pct:.2f}%", money(bal * s.risk_pct / 100, s.account_currency),
+              delta_color="off")
+    c3.metric("Your own datasets", int((ds["is_sample"] == 0).sum()) if not ds.empty else 0)
+    c4.metric("Broker profile", s.broker().name)
 
-    st.subheader("Start here")
+    checks = setup_checks(s)
+    todo = [c for c in checks if not c[0]]
+    with st.expander(f"✅ Setup checklist - {len(checks) - len(todo)} of {len(checks)} done", expanded=bool(todo)):
+        for done, item, where in checks:
+            st.markdown(("✅ " if done else "⬜ ") + item + ("" if done else f"  \n&nbsp;&nbsp;&nbsp;&nbsp;*Where:* {where}"))
+        st.caption("Assumptions EdgeLab made until you confirm them are listed in USER_INPUT_NEEDED.md in the app folder.")
+
+    st.subheader("A good way to use EdgeLab")
     st.markdown(
         """
-1. **Live signals** - start a *simulation* to see how pattern alerts work (or live scanning once your OANDA token
-   is set). Each alert gives the order idea, the size and risk in pounds, and an annotated chart showing why.
-   **Chart** - open any pair. Triangles mark patterns: click one for the explanation and its track record.
-   Read the *What happened today?* panel and use **Previous day / Next day** to step through history.
-2. **Position & margin** - see what 1 mini lot means in pounds: pip value, required and free margin, costs,
-   and whether a stop fits your risk-per-trade rule.
-3. **Glossary** - every term used in the app, in plain English. Most widgets also have a **?** tooltip.
-4. **Data** - import your own CSV export (or download crypto candles). The validator explains any problems it finds.
-5. **Settings** - account balance and currency, risk per trade, **broker profile** (spreads, commission, leverage),
-   exchange rates, timezone and session hours.
+1. **Learn the language** - *Concepts library* and *Glossary*; then **Replay & quiz** to practise reading charts with
+   the future hidden.
+2. **Watch the market** - **Live signals** alerts you when a pattern completes, with the order idea, the risk in
+   pounds and an annotated chart. On the **Chart** page, click any triangle for the explanation and track record.
+3. **Practise the human side** - take ideas on **Paper trading** with a written plan, then review each trade in the
+   **Trade journal**.
+4. **Test ideas honestly** - turn an idea into rules in the **Edge builder**; judge it on the out-of-sample part
+   and walk-forward, and watch the overfitting check as you tweak.
+5. **Understand risk** - run **Monte Carlo** on any result to see realistic drawdowns, losing streaks and the
+   chance of hitting your loss limit before you risk money.
 """
     )
-    st.warning(
-        "**About the sample data:** it is *synthetic* - generated by a random process designed to look and behave "
-        "like real markets (busy London/New York hours, trend and range days, weekend gaps). It contains **no real "
-        "edge**. Use it to learn the tools, not to judge strategies. Any pattern that seems to 'work' on it is luck, "
-        "which is itself a useful lesson."
-    )
-
-    st.subheader("Build progress")
-    for name, status, desc in STAGES:
-        icon = {"ready": "✅", "next": "🔜", "planned": "🗓️"}[status]
-        st.markdown(f"{icon} **{name}** - {desc}")
-
+    if not ds.empty and (ds["is_sample"] == 1).any() and not (ds["is_sample"] == 0).any():
+        st.warning("**You're using synthetic sample data** - random by design, with no real edge. Fine for learning the "
+                   "tools; download real data (Data -> Free history) before judging any strategy.")
+    st.subheader("What's built")
+    for name, desc in STAGES:
+        st.markdown(f"✅ **{name}** - {desc}")
     with st.expander("A note on honesty"):
         st.markdown(
             "Most day traders lose money, mainly because costs and randomness are larger than they appear. "
-            "This app is deliberately sceptical: it warns about small samples, never calls a pattern profitable "
-            "without out-of-sample evidence after costs, and shows you how wide the range of outcomes really is."
-        )
+            "EdgeLab is deliberately sceptical: it flags small samples, never calls a pattern profitable without "
+            "out-of-sample evidence after costs, counts how many variations you've tried, and shows how wide the "
+            "range of outcomes really is.")
